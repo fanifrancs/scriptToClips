@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScriptToClips</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  >
+  <link rel="stylesheet" href="/styles/index.css">
+</head>
+<body>
+  <main class="page-shell">
+    <div class="container">
+      <section class="hero-card p-4 p-lg-5 mb-4">
+        <div class="row g-4 align-items-center">
+          <div class="col-lg-8">
+            <h1 class="display-title mb-3">ScriptToClips</h1>
+            <p class="lead lead-copy mb-4">
+              Turn a written script into scene-by-scene stock media search input. Start with ChatGPT for script parsing, then paste the JSON here so the app can validate it and prepare for video or picture matching.
+            </p>
+            <div class="d-flex flex-wrap gap-3">
+              <a class="btn btn-accent btn-lg px-4" href="#workspace">Start With Step 1</a>
+              <a class="btn btn-outline-light btn-lg px-4" href="#steps">See How It Works</a>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="row g-3">
+              <div class="col-6 col-lg-12">
+                <div class="metric-pill h-100">
+                  <span class="helper-text">Step 1</span>
+                  <strong>Parse</strong>
+                  <span class="helper-text">Use the prompt with ChatGPT to split your script into scenes.</span>
+                </div>
+              </div>
+              <div class="col-6 col-lg-12">
+                <div class="metric-pill h-100">
+                  <span class="helper-text">Step 2</span>
+                  <strong>Fetch</strong>
+                  <span class="helper-text">Paste the JSON here and fetch matching stock videos or pictures for each scene.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="steps" class="row g-4 mb-4">
+        <div class="col-lg-6">
+          <article class="step-card p-4 h-100">
+            <div class="d-flex align-items-center gap-3 mb-3">
+              <div class="step-number">1</div>
+              <div>
+                <p class="section-label mb-1">Script Parsing</p>
+                <h2 class="h3 mb-0">Use ChatGPT to generate scene JSON</h2>
+              </div>
+            </div>
+            <p class="step-copy mb-3">
+              Copy the prompt below, paste it into ChatGPT, then wait for ChatGPT to ask for your script. Paste your script there and let it return a clean JSON array of scene objects.
+            </p>
+            <p class="footer-note mb-0">
+              The JSON should contain incremental scene IDs, short scene text, and up to two lowercase stock-media search queries per scene.
+            </p>
+          </article>
+        </div>
+        <div class="col-lg-6">
+          <article class="step-card p-4 h-100">
+            <div class="d-flex align-items-center gap-3 mb-3">
+              <div class="step-number">2</div>
+              <div>
+                <p class="section-label mb-1">Media Prep</p>
+                <h2 class="h3 mb-0">Paste the JSON here and get results</h2>
+              </div>
+            </div>
+            <p class="step-copy mb-3">
+              Paste the JSON response from ChatGPT into the workspace below, choose whether you want videos or pictures, and click <strong>Get Results</strong>. The app validates the structure, pulls a larger candidate set from Pexels for each scene, and then uses AI ranking to keep the closest matches.
+            </p>
+            <p class="footer-note mb-0">
+              Video results keep the top clips per scene. Picture results keep two landscape and two portrait matches per scene.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="workspace" class="row g-4 align-items-stretch">
+        <div class="col-xl-6">
+          <div class="workspace-card p-4 h-100">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+              <div>
+                <p class="section-label mb-1">Prompt For ChatGPT</p>
+                <h2 class="h4 mb-0">Copy this prompt</h2>
+              </div>
+              <button class="btn btn-outline-light" id="copyPromptButton" type="button">Copy Prompt</button>
+            </div>
+            <textarea id="chatgptPrompt" class="prompt-box" readonly><%= chatGptPrompt %></textarea>
+          </div>
+        </div>
+
+        <div class="col-xl-6">
+          <div class="workspace-card p-4 h-100">
+            <div class="mb-3">
+              <p class="section-label mb-1">Scene JSON Input</p>
+              <h2 class="h4 mb-0">Paste ChatGPT output</h2>
+            </div>
+            <form
+              id="sceneJsonForm"
+              action="/process"
+              method="post"
+              data-ranking-message="<%= initialRankingStatus.message %>"
+              data-ranking-mode="<%= initialRankingStatus.appliedMode %>"
+            >
+              <label class="form-label helper-text" for="scenesJson">
+                Paste the full JSON array exactly as ChatGPT generated it.
+              </label>
+              <div class="media-type-picker mb-3">
+                <p class="form-label helper-text mb-2">Choose the result type to fetch from Pexels.</p>
+                <div class="media-type-grid" role="radiogroup" aria-label="Result type">
+                  <label class="media-type-option">
+                    <input type="radio" name="mediaType" value="video" checked>
+                    <span class="media-type-option-copy">
+                      <strong>Video</strong>
+                      <span>Fetch and rank stock footage clips for each scene.</span>
+                    </span>
+                  </label>
+                  <label class="media-type-option">
+                    <input type="radio" name="mediaType" value="image">
+                    <span class="media-type-option-copy">
+                      <strong>Pictures</strong>
+                      <span>Fetch and rank stock photos, then keep 2 landscape and 2 portrait matches per scene.</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+              <textarea
+                id="scenesJson"
+                name="scenesJson"
+                class="json-box mb-3"
+                placeholder='[
+  {
+    "id": 1,
+    "sceneText": "leo stood outside his house",
+    "searchQueries": ["standing outside", "boy outdoor"]
+  }
+]'
+                required
+              ></textarea>
+              <div class="d-flex flex-wrap gap-3 align-items-center">
+                <button class="btn btn-accent px-4 py-2" type="submit" id="submitButton">Get Videos</button>
+                <span id="formStatus" class="status-chip">Waiting for JSON input</span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="response-card p-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+              <div>
+                <p class="section-label mb-1">Result Matches</p>
+                <h2 class="h4 mb-0">Scene-by-scene Pexels matches</h2>
+              </div>
+              <span class="footer-note">Each scene appears with the ranked Pexels videos or pictures fetched for it.</span>
+            </div>
+            <div class="results-action-bar">
+              <button class="btn btn-accent results-download-btn" id="downloadTopButton" type="button" disabled>
+                Download All
+              </button>
+            </div>
+            <div id="resultsContainer" class="results-shell">
+              <div class="results-state">
+                <p class="results-state-title">Ready to fetch results</p>
+                <p class="results-state-copy mb-0">
+                  Submit a valid scene JSON payload and the matching previews will appear here.
+                </p>
+              </div>
+            </div>
+            <div class="results-action-bar results-action-bar-bottom">
+              <button class="btn btn-accent results-download-btn" id="downloadBottomButton" type="button" disabled>
+                Download All
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <button class="back-to-top-btn" id="backToTopButton" type="button" aria-label="Back to top">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 5l-7 7 1.4 1.4 4.6-4.6V19h2V8.8l4.6 4.6L19 12z"></path>
+    </svg>
+  </button>
+  <script src="/scripts/index.js"></script>
+</body>
+</html>

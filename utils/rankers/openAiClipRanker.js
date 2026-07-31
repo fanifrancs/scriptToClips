@@ -1,0 +1,190 @@
+const OpenAI = require('openai');
+
+let openaiClient;
+
+async function rankWithOpenAI({
+  apiKey,
+  model,
+  mediaType,
+  sceneText,
+  searchQueries,
+  candidates,
+  maxSelections,
+  minimumRankScore
+}) {
+  const client = getOpenAIClient(apiKey);
+  const rankingSchema = buildRankingSchema(maxSelections);
+
+  const response = await client.responses.create({
+    model,
+    instructions: [
+      'You rank stock media candidates for scene matching.',
+      'Judge each candidate by how well it matches the requested scene visually.',
+      'Use both the candidate metadata and the preview image when available.',
+      'Prioritize subject, action, setting, and overall literal visual match.',
+      'Penalize candidates that are generic, mismatched, staged differently, or only partially related.',
+      'Select at most the requested number of candidates.',
+      'Only assign scores of 70 or higher to candidates that are genuinely strong matches.',
+      'If none are strong enough, return an empty selections array.',
+      'Only choose candidates that are clearly relevant.'
+    ].join(' '),
+    input: [
+      {
+        role: 'user',
+        content: buildRankingInput({ mediaType, sceneText, searchQueries, candidates, maxSelections })
+      }
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'media_ranking',
+        strict: true,
+        schema: rankingSchema
+      }
+    }
+  });
+
+  const rawOutput = response.output_text || '';
+
+  if (!rawOutput) {
+    throw new Error('OpenAI returned an empty ranking response.');
+  }
+
+  let parsedOutput;
+
+  try {
+    parsedOutput = JSON.parse(rawOutput);
+  } catch (error) {
+    throw new Error('OpenAI returned invalid JSON while ranking media.');
+  }
+
+  const seenCandidateIds = new Set();
+
+  return (parsedOutput.selections || [])
+    .filter(selection => {
+      if (selection.score < minimumRankScore) {
+        return false;
+      }
+
+      if (seenCandidateIds.has(selection.id)) {
+        return false;
+      }
+
+      seenCandidateIds.add(selection.id);
+      return true;
+    })
+    .map(selection => {
+      const matchedCandidate = candidates.find(candidate => candidate.id === selection.id);
+
+      if (!matchedCandidate) {
+        return null;
+      }
+
+      return {
+        ...matchedCandidate,
+        rankScore: selection.score,
+        rankReason: selection.reason,
+        rankingMode: 'openai'
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.rankScore - left.rankScore)
+    .slice(0, maxSelections);
+}
+
+function getOpenAIClient(apiKey) {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey });
+  }
+
+  return openaiClient;
+}
+
+function buildRankingInput({ mediaType, sceneText, searchQueries, candidates, maxSelections }) {
+  const content = [
+    {
+      type: 'input_text',
+      text: [
+        `Media type: ${mediaType}`,
+        `Scene to match: ${sceneText}`,
+        `Search queries used: ${searchQueries.join(', ')}`,
+        `Return at most ${maxSelections} strong matches.`,
+        'Each candidate appears below with metadata, followed by its preview image when available.'
+      ].join('\n')
+    }
+  ];
+
+  candidates.forEach((candidate, index) => {
+    const metadataLines = [
+      `Candidate ${index + 1}`,
+      `ID: ${candidate.id}`,
+      `Title: ${candidate.title || 'unknown'}`,
+      `Description: ${candidate.description || 'unknown'}`,
+      `Source queries: ${candidate.sourceQueries.join(', ') || 'unknown'}`,
+      `Orientation: ${candidate.orientation || 'unknown'}`,
+      `Resolution: ${candidate.width || '?'}x${candidate.height || '?'}`,
+      `Creator: ${candidate.creator || 'unknown'}`
+    ];
+
+    if (Number.isFinite(candidate.duration)) {
+      metadataLines.splice(5, 0, `Duration: ${formatDurationSeconds(candidate.duration)}`);
+    }
+
+    content.push({
+      type: 'input_text',
+      text: metadataLines.join('\n')
+    });
+
+    if (candidate.thumbnail || candidate.previewUrl) {
+      content.push({
+        type: 'input_image',
+        image_url: candidate.thumbnail || candidate.previewUrl,
+        detail: 'low'
+      });
+    }
+  });
+
+  return content;
+}
+
+function buildRankingSchema(maxSelections) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      selections: {
+        type: 'array',
+        maxItems: maxSelections,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: {
+              type: 'integer'
+            },
+            score: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 100
+            },
+            reason: {
+              type: 'string'
+            }
+          },
+          required: ['id', 'score', 'reason']
+        }
+      }
+    },
+    required: ['selections']
+  };
+}
+
+function formatDurationSeconds(value) {
+  if (!Number.isFinite(value)) {
+    return 'unknown';
+  }
+
+  return `${value} seconds`;
+}
+
+module.exports = { rankWithOpenAI };
