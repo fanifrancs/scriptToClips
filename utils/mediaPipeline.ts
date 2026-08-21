@@ -1,7 +1,8 @@
-const { rankMediaCandidates, summarizeRankingStatus } = require('./clipRanker');
-const { dedupeCandidatesById, selectImageResults } = require('./mediaSelection');
-const { MEDIA_TYPES } = require('./mediaTypes');
-const { searchPhotos, searchVideos } = require('./pexelsApi');
+import { rankMediaCandidates, summarizeRankingStatus } from './clipRanker';
+import { dedupeCandidatesById, selectImageResults } from './mediaSelection';
+import { MEDIA_TYPES } from './mediaTypes';
+import { searchPhotos, searchVideos } from './pexelsApi';
+import type { MediaCandidate, MediaType, RankedMediaCandidate, Scene, SceneProcessingResult } from './types';
 
 const PEXELS_CANDIDATES_PER_QUERY = Number(process.env.PEXELS_CANDIDATES_PER_QUERY || 10);
 const MAX_CANDIDATES_FOR_RANKING = Number(process.env.MAX_CANDIDATES_FOR_RANKING || 10);
@@ -10,7 +11,28 @@ const SCENE_PROCESSING_CONCURRENCY = Number(process.env.SCENE_PROCESSING_CONCURR
 // Each media type has the same high-level pipeline but a different fetcher and
 // final selection rule. Videos keep the top two ranked clips. Images keep more
 // items and try to preserve a practical landscape/portrait mix for editing.
-const MEDIA_PIPELINES = {
+interface MediaPipeline {
+  fetchCandidates: (query: string, perPage: number) => Promise<MediaCandidate[]>;
+  getRankingSelectionLimit: (candidates: MediaCandidate[]) => number;
+  finalizeSelections: (candidates: RankedMediaCandidate[]) => RankedMediaCandidate[];
+}
+
+interface SearchCache extends Map<string, Promise<MediaCandidate[]>> {}
+
+interface ProcessScenesInput {
+  scenes: Scene[];
+  mediaType: MediaType;
+}
+
+interface ProcessSingleSceneInput {
+  scene: Scene;
+  mediaType: MediaType;
+  excludedAssetIds?: Array<string | number>;
+  pipeline?: MediaPipeline;
+  searchCache?: SearchCache;
+}
+
+const MEDIA_PIPELINES: Record<MediaType, MediaPipeline> = {
   [MEDIA_TYPES.VIDEO]: {
     fetchCandidates: searchVideos,
     getRankingSelectionLimit: () => 2,
@@ -23,17 +45,17 @@ const MEDIA_PIPELINES = {
       landscapeTarget: 2,
       portraitTarget: 2,
       totalTarget: 4
-    })
+    }) as RankedMediaCandidate[]
   }
 };
 
-async function processScenes({ scenes, mediaType }) {
+export async function processScenes({ scenes, mediaType }: ProcessScenesInput) {
   const pipeline = getPipeline(mediaType);
 
   // This cache lives only for one /process request. It avoids duplicate Pexels
   // calls when multiple scenes use the same query, but it does not persist
   // across users or server restarts.
-  const searchCache = new Map();
+  const searchCache: SearchCache = new Map();
 
   // Scenes are independent, so a small amount of parallelism improves latency.
   // The limit prevents one large script from launching every Pexels/OpenAI call
@@ -55,7 +77,13 @@ async function processScenes({ scenes, mediaType }) {
 // Replacement uses the same ranking path as the full process endpoint. The
 // only difference is that it can exclude already-shown Pexels ids and ask for a
 // slightly larger candidate pool, giving the user a real alternate result.
-async function processSingleScene({ scene, mediaType, excludedAssetIds = [], pipeline = getPipeline(mediaType), searchCache } = {}) {
+export async function processSingleScene({
+  scene,
+  mediaType,
+  excludedAssetIds = [],
+  pipeline = getPipeline(mediaType),
+  searchCache
+}: ProcessSingleSceneInput): Promise<SceneProcessingResult> {
   // Asset ids are converted to strings because ids can cross the browser/server
   // boundary as either numbers or strings. A string Set keeps comparisons
   // stable for replacement filtering.
@@ -113,11 +141,23 @@ async function processSingleScene({ scene, mediaType, excludedAssetIds = [], pip
   };
 }
 
-function getPipeline(mediaType) {
+function getPipeline(mediaType: MediaType): MediaPipeline {
   return MEDIA_PIPELINES[mediaType] || MEDIA_PIPELINES[MEDIA_TYPES.VIDEO];
 }
 
-function fetchCandidatesWithCache({ cache, mediaType, query, perQueryLimit, fetchCandidates }) {
+function fetchCandidatesWithCache({
+  cache,
+  mediaType,
+  query,
+  perQueryLimit,
+  fetchCandidates
+}: {
+  cache?: SearchCache;
+  mediaType: MediaType;
+  query: string;
+  perQueryLimit: number;
+  fetchCandidates: MediaPipeline['fetchCandidates'];
+}): Promise<MediaCandidate[]> {
   if (!cache) {
     return fetchCandidates(query, perQueryLimit);
   }
@@ -130,14 +170,18 @@ function fetchCandidatesWithCache({ cache, mediaType, query, perQueryLimit, fetc
     cache.set(cacheKey, fetchCandidates(query, perQueryLimit));
   }
 
-  return cache.get(cacheKey);
+  return cache.get(cacheKey) as Promise<MediaCandidate[]>;
 }
 
-async function mapWithConcurrency(items, concurrency, mapper) {
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
   // Keep result order identical to input order even though individual workers
   // finish at different times. The browser expects scene 1, scene 2, etc.
   const safeConcurrency = Math.max(1, Math.min(Number(concurrency) || 1, items.length || 1));
-  const results = new Array(items.length);
+  const results = new Array<R>(items.length);
   let nextIndex = 0;
 
   async function worker() {
@@ -154,5 +198,3 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 
   return results;
 }
-
-module.exports = { processScenes, processSingleScene };

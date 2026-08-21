@@ -1,5 +1,5 @@
-const express = require('express');
-const { getInitialRankingStatus } = require('../utils/clipRanker');
+import express from 'express';
+import { getInitialRankingStatus } from '../utils/clipRanker';
 const router = express.Router();
 
 const chatGptPrompt = `Generate a JSON output for a script I am going to provide you. Split the script into distinct scenes and structure the result as a valid JSON array of objects, using the format below as an illustration:
@@ -53,4 +53,4 @@ router.get('/', (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

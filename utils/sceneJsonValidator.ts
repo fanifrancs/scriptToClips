@@ -1,10 +1,12 @@
+import type { Scene, ValidationResult } from './types';
+
 // The validator is shared by both the review step and the final fetch step.
 // Keeping validation in one file means the browser and backend do not drift
 // into slightly different ideas of what a "valid scene" means.
-function validateScenesJson(rawInput) {
+export function validateScenesJson(rawInput: unknown): ValidationResult {
   // The validator returns one consistent response shape for success and failure
   // so routes can pass validationResult directly back to the browser.
-  if (!rawInput || !rawInput.trim()) {
+  if (typeof rawInput !== 'string' || !rawInput.trim()) {
     return {
       valid: false,
       message: 'Paste the JSON output from ChatGPT before continuing.',
@@ -12,7 +14,7 @@ function validateScenesJson(rawInput) {
     };
   }
 
-  let parsedInput;
+  let parsedInput: unknown;
   try {
     parsedInput = JSON.parse(rawInput);
   } catch (error) {
@@ -39,7 +41,7 @@ function validateScenesJson(rawInput) {
     };
   }
 
-  const errors = [];
+  const errors: string[] = [];
 
   parsedInput.forEach((scene, index) => {
     const sceneNumber = index + 1;
@@ -52,30 +54,32 @@ function validateScenesJson(rawInput) {
       return;
     }
 
-    if (!Number.isInteger(scene.id)) {
+    const sceneRecord = scene as Record<string, unknown>;
+
+    if (!Number.isInteger(sceneRecord.id)) {
       errors.push(`Scene ${sceneNumber} id must be an integer.`);
-    } else if (scene.id !== sceneNumber) {
+    } else if (sceneRecord.id !== sceneNumber) {
       errors.push(`Scene ${sceneNumber} id must be ${sceneNumber}.`);
     }
 
-    if (typeof scene.sceneText !== 'string' || !scene.sceneText.trim()) {
+    if (typeof sceneRecord.sceneText !== 'string' || !sceneRecord.sceneText.trim()) {
       errors.push(`Scene ${sceneNumber} sceneText must be a non-empty string.`);
     }
 
-    if (!Array.isArray(scene.searchQueries)) {
+    if (!Array.isArray(sceneRecord.searchQueries)) {
       errors.push(`Scene ${sceneNumber} searchQueries must be an array.`);
       return;
     }
 
-    if (scene.searchQueries.length === 0) {
+    if (sceneRecord.searchQueries.length === 0) {
       errors.push(`Scene ${sceneNumber} searchQueries must contain at least one query.`);
     }
 
-    if (scene.searchQueries.length > 2) {
+    if (sceneRecord.searchQueries.length > 2) {
       errors.push(`Scene ${sceneNumber} searchQueries can contain at most 2 queries.`);
     }
 
-    scene.searchQueries.forEach((query, queryIndex) => {
+    sceneRecord.searchQueries.forEach((query, queryIndex) => {
       const label = `Scene ${sceneNumber} searchQueries[${queryIndex}]`;
 
       // Lowercase/trim rules make duplicate query detection and Pexels caching
@@ -103,22 +107,20 @@ function validateScenesJson(rawInput) {
       : 'JSON is not valid for the expected scene format.',
     sceneCount: parsedInput.length,
     errors,
-    scenes: errors.length === 0 ? normalizeScenes(parsedInput) : []
+    scenes: errors.length === 0 ? normalizeScenes(parsedInput as Scene[]) : []
   };
 }
 
 // Normalization trims display text and lowercases query values after validation
 // confirms that the user supplied a safe shape. The app stores and submits this
 // normalized version so the final media request is predictable.
-function normalizeScenes(scenes = []) {
+export function normalizeScenes(scenes: Array<Partial<Scene>> = []): Scene[] {
   return scenes.map((scene, index) => ({
     id: index + 1,
     sceneText: String(scene.sceneText || '').trim(),
-    searchQueries: scene.searchQueries
+    searchQueries: (scene.searchQueries || [])
       .map(query => String(query || '').trim().toLowerCase())
       .filter(Boolean)
       .slice(0, 2)
   }));
 }
-
-module.exports = { normalizeScenes, validateScenesJson };

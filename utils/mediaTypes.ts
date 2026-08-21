@@ -1,14 +1,16 @@
-const MEDIA_TYPES = Object.freeze({
+import type { MediaType } from './types';
+
+export const MEDIA_TYPES = Object.freeze({
   VIDEO: 'video',
   IMAGE: 'image'
-});
+} as const);
 
-const DEFAULT_MEDIA_TYPE = MEDIA_TYPES.VIDEO;
+export const DEFAULT_MEDIA_TYPE: MediaType = MEDIA_TYPES.VIDEO;
 
 // Central media metadata keeps backend messages and selection behavior aligned.
 // Routes import these labels instead of hardcoding "clip"/"picture" wording in
 // multiple places, which reduces drift when adding another media type later.
-const MEDIA_TYPE_DETAILS = Object.freeze({
+export const MEDIA_TYPE_DETAILS = Object.freeze({
   [MEDIA_TYPES.VIDEO]: {
     value: MEDIA_TYPES.VIDEO,
     label: 'Video',
@@ -29,7 +31,7 @@ const MEDIA_TYPE_DETAILS = Object.freeze({
   }
 });
 
-function normalizeMediaType(value) {
+export function normalizeMediaType(value: unknown): MediaType | null {
   // Treat media type as user/client input: trim it, lowercase it, and return
   // null instead of throwing so routes can send a clean 400 response.
   const normalizedValue = String(value || '').trim().toLowerCase();
@@ -41,15 +43,8 @@ function normalizeMediaType(value) {
   return null;
 }
 
-function getMediaTypeDetails(mediaType = DEFAULT_MEDIA_TYPE) {
+export function getMediaTypeDetails(mediaType: MediaType = DEFAULT_MEDIA_TYPE) {
   // Fall back to video details for display-only usage. Validation-sensitive
   // code should still call normalizeMediaType first when accepting client input.
   return MEDIA_TYPE_DETAILS[mediaType] || MEDIA_TYPE_DETAILS[DEFAULT_MEDIA_TYPE];
 }
-
-module.exports = {
-  DEFAULT_MEDIA_TYPE,
-  MEDIA_TYPES,
-  getMediaTypeDetails,
-  normalizeMediaType
-};

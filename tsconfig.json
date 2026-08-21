@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "server.ts",
+    "routes/**/*.ts",
+    "utils/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "public"
+  ]
+}

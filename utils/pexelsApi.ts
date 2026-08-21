@@ -1,15 +1,60 @@
-const axios = require('axios');
-const { MEDIA_TYPES } = require('./mediaTypes');
+import axios from 'axios';
+import { MEDIA_TYPES } from './mediaTypes';
+import type { MediaCandidate, Orientation } from './types';
 
 const API_KEY = process.env.PEXELS_API_KEY;
 const VIDEO_SEARCH_URL = 'https://api.pexels.com/videos/search';
 const PHOTO_SEARCH_URL = 'https://api.pexels.com/v1/search';
 
-async function searchVideos(query, perPage = 5) {
+interface PexelsVideoFile {
+  id?: number;
+  width?: number;
+  height?: number;
+  quality?: string;
+  file_type?: string;
+  link?: string;
+}
+
+interface PexelsVideo {
+  id: number;
+  duration?: number;
+  image?: string;
+  url?: string;
+  user?: { name?: string };
+  video_files: PexelsVideoFile[];
+}
+
+interface PexelsPhotoSource {
+  original?: string;
+  large2x?: string;
+  large?: string;
+  medium?: string;
+  small?: string;
+}
+
+interface PexelsPhoto {
+  id: number;
+  width?: number;
+  height?: number;
+  alt?: string;
+  url?: string;
+  photographer?: string;
+  src: PexelsPhotoSource;
+}
+
+interface PexelsVideoResponse {
+  videos: PexelsVideo[];
+}
+
+interface PexelsPhotoResponse {
+  photos: PexelsPhoto[];
+}
+
+export async function searchVideos(query: string, perPage = 5): Promise<MediaCandidate[]> {
   // Pexels videos include several encodes for each result. The app exposes one
   // downloadable URL per candidate, so each video is normalized to the best mp4
   // file plus common metadata used by both rankers and the ZIP manifest.
-  const response = await searchPexels(VIDEO_SEARCH_URL, query, perPage);
+  const response = await searchPexels<PexelsVideoResponse>(VIDEO_SEARCH_URL, query, perPage);
 
   return response.data.videos.map(video => {
     const selectedVideoFile = pickVideoFile(video.video_files);
@@ -25,21 +70,21 @@ async function searchVideos(query, perPage = 5) {
       url: selectedVideoFile?.link || '',
       previewUrl: selectedVideoFile?.link || '',
       duration: video.duration,
-      thumbnail: video.image,
+      thumbnail: video.image || '',
       width,
       height,
       orientation: determineOrientation(width, height),
-      pexelsUrl: video.url,
+      pexelsUrl: video.url || '',
       creator: video.user?.name || ''
     };
   }).filter(video => video.url);
 }
 
-async function searchPhotos(query, perPage = 5) {
+export async function searchPhotos(query: string, perPage = 5): Promise<MediaCandidate[]> {
   // Photo search returns a src object with multiple sizes. The app keeps an
   // original/high-quality URL for ZIP output and smaller URLs for browser
   // preview/thumbnail display.
-  const response = await searchPexels(PHOTO_SEARCH_URL, query, perPage);
+  const response = await searchPexels<PexelsPhotoResponse>(PHOTO_SEARCH_URL, query, perPage);
 
   return response.data.photos.map(photo => {
     const width = Number(photo.width) || null;
@@ -57,13 +102,13 @@ async function searchPhotos(query, perPage = 5) {
       width,
       height,
       orientation: determineOrientation(width, height),
-      pexelsUrl: photo.url,
+      pexelsUrl: photo.url || '',
       creator: photo.photographer || ''
     };
   }).filter(photo => photo.url);
 }
 
-async function searchPexels(url, query, perPage) {
+async function searchPexels<T>(url: string, query: string, perPage: number) {
   if (!API_KEY) {
     throw new Error('Missing PEXELS_API_KEY in environment.');
   }
@@ -71,16 +116,17 @@ async function searchPexels(url, query, perPage) {
   try {
     // axios builds the query string from params and sends the Pexels API key in
     // the Authorization header required by Pexels.
-    return await axios.get(url, {
+    return await axios.get<T>(url, {
       headers: { Authorization: API_KEY },
       params: { query, per_page: perPage }
     });
   } catch (error) {
-    throw new Error('Pexels API error: ' + error.message);
+    const message = error instanceof Error ? error.message : 'Unknown Pexels API failure';
+    throw new Error('Pexels API error: ' + message);
   }
 }
 
-function pickVideoFile(videoFiles = []) {
+function pickVideoFile(videoFiles: PexelsVideoFile[] = []) {
   // Choose the best mp4 in one pass instead of sorting the full list. The
   // quality comparison below mirrors the old sort order: resolution first,
   // then quality label, then file id as a deterministic tie-breaker.
@@ -94,10 +140,10 @@ function pickVideoFile(videoFiles = []) {
     }
 
     return bestFile;
-  }, null);
+  }, null as PexelsVideoFile | null);
 }
 
-function isBetterVideoFile(candidate, currentBest) {
+function isBetterVideoFile(candidate: PexelsVideoFile, currentBest: PexelsVideoFile) {
   const candidatePixels = getPixelCount(candidate);
   const currentPixels = getPixelCount(currentBest);
 
@@ -114,7 +160,7 @@ function isBetterVideoFile(candidate, currentBest) {
   return getFileId(candidate) > getFileId(currentBest);
 }
 
-function getPixelCount(videoFile = {}) {
+function getPixelCount(videoFile: PexelsVideoFile = {}) {
   const width = Number(videoFile.width) || 0;
   const height = Number(videoFile.height) || 0;
   return width * height;
@@ -138,7 +184,7 @@ function getQualityRank(quality = '') {
   return 0;
 }
 
-function getFileId(videoFile = {}) {
+function getFileId(videoFile: PexelsVideoFile = {}) {
   return Number(videoFile.id) || 0;
 }
 
@@ -155,7 +201,7 @@ function deriveVideoTitle(pexelsUrl = '') {
   return slug || '';
 }
 
-function derivePhotoTitle(photo = {}) {
+function derivePhotoTitle(photo: Partial<PexelsPhoto> = {}) {
   if (photo.alt && String(photo.alt).trim()) {
     return String(photo.alt).trim();
   }
@@ -170,7 +216,7 @@ function derivePhotoTitle(photo = {}) {
   return slug || 'pexels photo';
 }
 
-function pickPhotoAssetUrl(photoSource = {}) {
+function pickPhotoAssetUrl(photoSource: PexelsPhotoSource = {}) {
   return (
     photoSource.original ||
     photoSource.large2x ||
@@ -181,7 +227,7 @@ function pickPhotoAssetUrl(photoSource = {}) {
   );
 }
 
-function pickPhotoPreviewUrl(photoSource = {}) {
+function pickPhotoPreviewUrl(photoSource: PexelsPhotoSource = {}) {
   return (
     photoSource.large2x ||
     photoSource.large ||
@@ -192,7 +238,7 @@ function pickPhotoPreviewUrl(photoSource = {}) {
   );
 }
 
-function pickPhotoThumbnailUrl(photoSource = {}) {
+function pickPhotoThumbnailUrl(photoSource: PexelsPhotoSource = {}) {
   return (
     photoSource.medium ||
     photoSource.small ||
@@ -202,7 +248,7 @@ function pickPhotoThumbnailUrl(photoSource = {}) {
   );
 }
 
-function determineOrientation(width, height) {
+function determineOrientation(width: number | null, height: number | null): Orientation {
   // Orientation is computed once at API-normalization time so later UI, image
   // selection, and ZIP manifest code can use the same simple field.
   if (!width || !height) {
@@ -215,8 +261,3 @@ function determineOrientation(width, height) {
 
   return width > height ? 'landscape' : 'portrait';
 }
-
-module.exports = {
-  searchPhotos,
-  searchVideos
-};

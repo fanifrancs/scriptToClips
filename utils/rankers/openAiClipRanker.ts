@@ -1,8 +1,30 @@
-const OpenAI = require('openai');
+import OpenAI from 'openai';
+import type { MediaCandidate, MediaType, RankedMediaCandidate } from '../types';
 
-let openaiClient;
+let openaiClient: OpenAI | undefined;
 
-async function rankWithOpenAI({
+interface OpenAIRankingInput {
+  apiKey: string;
+  model: string;
+  mediaType: MediaType;
+  sceneText: string;
+  searchQueries: string[];
+  candidates: Array<MediaCandidate & { sourceQueries: string[] }>;
+  maxSelections: number;
+  minimumRankScore: number;
+}
+
+interface OpenAISelection {
+  id: number | string;
+  score: number;
+  reason: string;
+}
+
+interface OpenAIRankingOutput {
+  selections?: OpenAISelection[];
+}
+
+export async function rankWithOpenAI({
   apiKey,
   model,
   mediaType,
@@ -11,7 +33,7 @@ async function rankWithOpenAI({
   candidates,
   maxSelections,
   minimumRankScore
-}) {
+}: OpenAIRankingInput): Promise<RankedMediaCandidate[]> {
   const client = getOpenAIClient(apiKey);
   const rankingSchema = buildRankingSchema(maxSelections);
 
@@ -52,7 +74,7 @@ async function rankWithOpenAI({
     throw new Error('OpenAI returned an empty ranking response.');
   }
 
-  let parsedOutput;
+  let parsedOutput: OpenAIRankingOutput;
 
   try {
     parsedOutput = JSON.parse(rawOutput);
@@ -76,7 +98,7 @@ async function rankWithOpenAI({
       seenCandidateIds.add(selection.id);
       return true;
     })
-    .map(selection => {
+    .map((selection): RankedMediaCandidate | null => {
       const matchedCandidate = candidatesById.get(String(selection.id));
 
       if (!matchedCandidate) {
@@ -87,15 +109,15 @@ async function rankWithOpenAI({
         ...matchedCandidate,
         rankScore: selection.score,
         rankReason: selection.reason,
-        rankingMode: 'openai'
+        rankingMode: 'openai' as const
       };
     })
-    .filter(Boolean)
+    .filter((candidate): candidate is RankedMediaCandidate => Boolean(candidate))
     .sort((left, right) => right.rankScore - left.rankScore)
     .slice(0, maxSelections);
 }
 
-function getOpenAIClient(apiKey) {
+function getOpenAIClient(apiKey: string) {
   // Reuse one client instance for the process. The API key is read from env at
   // startup in clipRanker.js, so recreating a client per scene adds no value.
   if (!openaiClient) {
@@ -105,10 +127,19 @@ function getOpenAIClient(apiKey) {
   return openaiClient;
 }
 
-function buildRankingInput({ mediaType, sceneText, searchQueries, candidates, maxSelections }) {
+function buildRankingInput({
+  mediaType,
+  sceneText,
+  searchQueries,
+  candidates,
+  maxSelections
+}: Omit<OpenAIRankingInput, 'apiKey' | 'model' | 'minimumRankScore'>) {
   // The input alternates text metadata and preview images. Low image detail is
   // enough for visual relevance checks and is cheaper/faster than high detail.
-  const content = [
+  const content: Array<
+    | { type: 'input_text'; text: string }
+    | { type: 'input_image'; image_url: string; detail: 'low' }
+  > = [
     {
       type: 'input_text',
       text: [
@@ -154,7 +185,7 @@ function buildRankingInput({ mediaType, sceneText, searchQueries, candidates, ma
   return content;
 }
 
-function buildRankingSchema(maxSelections) {
+function buildRankingSchema(maxSelections: number) {
   // The schema restricts the model to candidate ids, integer scores, and short
   // reasons. maxItems protects callers from receiving more assets than the UI
   // is prepared to render for a scene.
@@ -189,12 +220,10 @@ function buildRankingSchema(maxSelections) {
   };
 }
 
-function formatDurationSeconds(value) {
+function formatDurationSeconds(value: unknown) {
   if (!Number.isFinite(value)) {
     return 'unknown';
   }
 
   return `${value} seconds`;
 }
-
-module.exports = { rankWithOpenAI };

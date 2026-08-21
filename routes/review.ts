@@ -1,6 +1,6 @@
-const express = require('express');
-const { createRequestLogger } = require('../utils/logger');
-const { validateScenesJson } = require('../utils/sceneJsonValidator');
+import express from 'express';
+import { createRequestLogger } from '../utils/logger';
+import { validateScenesJson } from '../utils/sceneJsonValidator';
 
 const router = express.Router();
 
@@ -33,4 +33,4 @@ router.post('/', (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

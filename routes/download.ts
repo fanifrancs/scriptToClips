@@ -1,6 +1,6 @@
-const express = require('express');
-const { streamResultsZip } = require('../utils/zipCreator');
-const { createRequestLogger } = require('../utils/logger');
+import express from 'express';
+import { createRequestLogger } from '../utils/logger';
+import { streamResultsZip } from '../utils/zipCreator';
 
 const router = express.Router();
 
@@ -34,14 +34,16 @@ router.post('/', async (req, res) => {
       sceneCount: results.length
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to create the ZIP download.';
+
     log.error('zip_failed', {
       mediaType,
-      message: error.message
+      message
     });
 
     if (!res.headersSent) {
       return res.status(500).json({
-        error: error.message || 'Failed to create the ZIP download.'
+        error: message
       });
     }
 
@@ -49,4 +51,4 @@ router.post('/', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

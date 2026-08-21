@@ -1,11 +1,31 @@
-const { rankWithOpenAI } = require('./rankers/openAiClipRanker');
-const { rankWithHeuristics } = require('./rankers/heuristicClipRanker');
+import { rankWithHeuristics } from './rankers/heuristicClipRanker';
+import { rankWithOpenAI } from './rankers/openAiClipRanker';
+import type { MediaCandidate, MediaType, RankedMediaCandidate, RankingStatus } from './types';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_RANKER_MODEL = process.env.OPENAI_RANKER_MODEL || process.env.OPENAI_MODEL || 'gpt-5-mini';
 const HEURISTIC_FALLBACK_ENABLED = process.env.HEURISTIC_FALLBACK_ENABLED !== 'false';
 
-async function rankMediaCandidates({ mediaType, sceneText, searchQueries, candidates, maxSelections = 2 }) {
+interface MediaRankingInput {
+  mediaType: MediaType;
+  sceneText: string;
+  searchQueries: string[];
+  candidates: MediaCandidate[];
+  maxSelections?: number;
+}
+
+interface MediaRankingResult {
+  assets: RankedMediaCandidate[];
+  ranking: RankingStatus;
+}
+
+export async function rankMediaCandidates({
+  mediaType,
+  sceneText,
+  searchQueries,
+  candidates,
+  maxSelections = 2
+}: MediaRankingInput): Promise<MediaRankingResult> {
   if (!Array.isArray(candidates) || candidates.length === 0) {
     return {
       assets: [],
@@ -86,20 +106,20 @@ async function rankMediaCandidates({ mediaType, sceneText, searchQueries, candid
         candidates: candidateEntries,
         maxSelections,
         minimumRankScore,
-        fallbackReason: error.message
+        fallbackReason: error instanceof Error ? error.message : 'Unknown OpenAI ranking error'
       }),
       ranking: {
         requestedMode: 'openai',
         appliedMode: 'heuristic',
         usedFallback: true,
-        fallbackReason: error.message,
+        fallbackReason: error instanceof Error ? error.message : 'Unknown OpenAI ranking error',
         message: 'OpenAI could not be used for ranking, so heuristic ranking was used instead.'
       }
     };
   }
 }
 
-function getInitialRankingStatus() {
+export function getInitialRankingStatus(): RankingStatus {
   if (OPENAI_API_KEY) {
     return {
       requestedMode: 'openai',
@@ -129,7 +149,7 @@ function getInitialRankingStatus() {
   };
 }
 
-function summarizeRankingStatus(statuses = []) {
+export function summarizeRankingStatus(statuses: RankingStatus[] = []): RankingStatus {
   // The browser needs one status message for the whole run even though each
   // scene can independently use OpenAI or fallback heuristics.
   if (!Array.isArray(statuses) || statuses.length === 0) {
@@ -172,12 +192,12 @@ function summarizeRankingStatus(statuses = []) {
   };
 }
 
-function buildInitialRankingStatus() {
+function buildInitialRankingStatus(): RankingStatus {
   return getInitialRankingStatus();
 }
 
-function shouldUseHeuristicFallback(error) {
-  const message = String(error?.message || '').toLowerCase();
+function shouldUseHeuristicFallback(error: unknown) {
+  const message = String(error instanceof Error ? error.message : '').toLowerCase();
 
   return (
     message.includes('quota') ||
@@ -190,9 +210,4 @@ function shouldUseHeuristicFallback(error) {
   );
 }
 
-module.exports = {
-  getInitialRankingStatus,
-  rankClipCandidates: rankMediaCandidates,
-  rankMediaCandidates,
-  summarizeRankingStatus
-};
+export const rankClipCandidates = rankMediaCandidates;

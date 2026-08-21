@@ -1,5 +1,18 @@
-function dedupeCandidatesById(queryResults = []) {
-  const dedupedCandidates = new Map();
+import type { MediaCandidate } from './types';
+
+interface QueryResult {
+  query: string;
+  candidates: MediaCandidate[];
+}
+
+interface ImageSelectionOptions {
+  landscapeTarget?: number;
+  portraitTarget?: number;
+  totalTarget?: number;
+}
+
+export function dedupeCandidatesById(queryResults: QueryResult[] = []): MediaCandidate[] {
+  const dedupedCandidates = new Map<MediaCandidate['id'], MediaCandidate & { sourceQueries: string[] }>();
 
   queryResults.forEach(({ query, candidates }) => {
     candidates.forEach(candidate => {
@@ -26,15 +39,15 @@ function dedupeCandidatesById(queryResults = []) {
   return [...dedupedCandidates.values()];
 }
 
-function selectImageResults(candidates = [], options = {}) {
+export function selectImageResults(candidates: MediaCandidate[] = [], options: ImageSelectionOptions = {}): MediaCandidate[] {
   // Image output is intended for editors who often need both horizontal and
   // vertical options. The candidate list is already ranked, so each pass keeps
   // original ranking order while filling orientation targets.
   const landscapeTarget = Number(options.landscapeTarget) || 2;
   const portraitTarget = Number(options.portraitTarget) || 2;
   const totalTarget = Number(options.totalTarget) || landscapeTarget + portraitTarget;
-  const selectedIds = new Set();
-  const selectedResults = [];
+  const selectedIds = new Set<MediaCandidate['id']>();
+  const selectedResults: MediaCandidate[] = [];
 
   appendByOrientation({
     candidates,
@@ -73,7 +86,19 @@ function selectImageResults(candidates = [], options = {}) {
   return selectedResults.slice(0, totalTarget);
 }
 
-function appendByOrientation({ candidates, selectedResults, selectedIds, orientation, target }) {
+function appendByOrientation({
+  candidates,
+  selectedResults,
+  selectedIds,
+  orientation,
+  target
+}: {
+  candidates: MediaCandidate[];
+  selectedResults: MediaCandidate[];
+  selectedIds: Set<MediaCandidate['id']>;
+  orientation: MediaCandidate['orientation'];
+  target: number;
+}) {
   let addedCount = 0;
 
   // Count only assets added during this orientation pass. selectedResults may
@@ -89,11 +114,11 @@ function appendByOrientation({ candidates, selectedResults, selectedIds, orienta
   }
 }
 
-function partitionByOrientation(candidates, priorityOrientation) {
+function partitionByOrientation(candidates: MediaCandidate[], priorityOrientation: MediaCandidate['orientation']) {
   // This avoids two separate filter passes while preserving the original order
   // inside each group.
-  const priority = [];
-  const fallback = [];
+  const priority: MediaCandidate[] = [];
+  const fallback: MediaCandidate[] = [];
 
   candidates.forEach(candidate => {
     if (candidate.orientation === priorityOrientation) {
@@ -106,8 +131,3 @@ function partitionByOrientation(candidates, priorityOrientation) {
 
   return [...priority, ...fallback];
 }
-
-module.exports = {
-  dedupeCandidatesById,
-  selectImageResults
-};

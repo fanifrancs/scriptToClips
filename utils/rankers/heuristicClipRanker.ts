@@ -1,9 +1,21 @@
+import type { MediaCandidate, MediaType, RankedMediaCandidate } from '../types';
+
 const HEURISTIC_STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'at', 'be', 'by', 'for', 'from', 'his', 'her', 'in', 'into', 'is',
   'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'with', 'young'
 ]);
 
-function rankWithHeuristics({
+interface HeuristicRankingInput {
+  mediaType: MediaType;
+  sceneText: string;
+  searchQueries: string[];
+  candidates: Array<MediaCandidate & { sourceQueries: string[] }>;
+  maxSelections: number;
+  minimumRankScore: number;
+  fallbackReason?: string;
+}
+
+export function rankWithHeuristics({
   mediaType,
   sceneText,
   searchQueries,
@@ -11,7 +23,7 @@ function rankWithHeuristics({
   maxSelections,
   minimumRankScore,
   fallbackReason
-}) {
+}: HeuristicRankingInput): RankedMediaCandidate[] {
   // The heuristic ranker is intentionally transparent and cheap. It scores
   // keyword overlap, source query overlap, duration, resolution, and orientation
   // so the app can still return usable results when OpenAI is unavailable.
@@ -20,7 +32,7 @@ function rankWithHeuristics({
   const scoringKeywords = [...new Set([...sceneKeywords, ...queryKeywords])];
 
   return candidates
-    .map(candidate => {
+    .map((candidate): RankedMediaCandidate => {
       const metadataKeywords = extractKeywords([
         candidate.title,
         candidate.description,
@@ -40,7 +52,7 @@ function rankWithHeuristics({
         score += 10;
       }
 
-      if (mediaType === 'video') {
+      if (mediaType === 'video' && typeof candidate.duration === 'number') {
         if (candidate.duration >= 4 && candidate.duration <= 30) {
           score += 8;
         } else if (candidate.duration > 60) {
@@ -67,7 +79,7 @@ function rankWithHeuristics({
           candidate,
           fallbackReason
         }),
-        rankingMode: 'heuristic'
+        rankingMode: 'heuristic' as const
       };
     })
     .filter(candidate => candidate.rankScore >= minimumRankScore)
@@ -75,7 +87,7 @@ function rankWithHeuristics({
     .slice(0, maxSelections);
 }
 
-function extractKeywords(text = '') {
+function extractKeywords(text = ''): string[] {
   // Lowercase tokenization plus stop-word removal keeps common filler words
   // from inflating scores. The Set also prevents repeated words from counting
   // multiple times.
@@ -87,7 +99,17 @@ function extractKeywords(text = '') {
   )];
 }
 
-function buildHeuristicReason({ mediaType, overlappingKeywords, candidate, fallbackReason }) {
+function buildHeuristicReason({
+  mediaType,
+  overlappingKeywords,
+  candidate,
+  fallbackReason
+}: {
+  mediaType: MediaType;
+  overlappingKeywords: string[];
+  candidate: MediaCandidate;
+  fallbackReason?: string;
+}) {
   // Reasons are included in the UI and ZIP metadata, so they are written as
   // human-facing notes instead of raw scoring internals.
   const matchedTerms = overlappingKeywords.length > 0
@@ -113,7 +135,7 @@ function buildHeuristicReason({ mediaType, overlappingKeywords, candidate, fallb
   return `${matchedTerms}${durationNote}${orientationNote}${resolutionNote}${fallbackNote}`;
 }
 
-function getResolutionBonus(width, height) {
+function getResolutionBonus(width: number, height: number) {
   const pixelCount = Number(width) * Number(height);
 
   if (pixelCount >= 3840 * 2160) {
@@ -130,5 +152,3 @@ function getResolutionBonus(width, height) {
 
   return 0;
 }
-
-module.exports = { rankWithHeuristics };

@@ -5,11 +5,11 @@
 // that long-running actions get a request id, timestamps, and a consistent
 // event name, so production issues can be traced later without rewriting every
 // route.
-function createRequestLogger(scope) {
+export function createRequestLogger(scope: string): Logger {
   const requestId = `${scope}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const startedAt = Date.now();
 
-  function write(level, event, details = {}) {
+  function write(level: 'info' | 'error', event: string, details: Record<string, unknown> = {}) {
     const payload = {
       level,
       scope,
@@ -28,5 +28,4 @@ function createRequestLogger(scope) {
     error: (event, details) => write('error', event, details)
   };
 }
-
-module.exports = { createRequestLogger };
+import type { Logger } from './types';

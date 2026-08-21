@@ -1,8 +1,9 @@
-const express = require('express');
-const { processSingleScene } = require('../utils/mediaPipeline');
-const { DEFAULT_MEDIA_TYPE, getMediaTypeDetails, normalizeMediaType } = require('../utils/mediaTypes');
-const { createRequestLogger } = require('../utils/logger');
-const { validateScenesJson } = require('../utils/sceneJsonValidator');
+import express from 'express';
+import { createRequestLogger } from '../utils/logger';
+import { DEFAULT_MEDIA_TYPE, getMediaTypeDetails, normalizeMediaType } from '../utils/mediaTypes';
+import { processSingleScene } from '../utils/mediaPipeline';
+import { validateScenesJson } from '../utils/sceneJsonValidator';
+import type { Scene } from '../utils/types';
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ router.post('/', async (req, res) => {
   // already shown. Those ids are excluded later so the replacement button is
   // more likely to produce a visibly different result.
   const mediaType = normalizeMediaType(req.body.mediaType || DEFAULT_MEDIA_TYPE);
-  const scene = req.body.scene;
+  const scene = req.body.scene as Partial<Scene> | undefined;
   const excludedAssetIds = Array.isArray(req.body.excludedAssetIds) ? req.body.excludedAssetIds : [];
 
   if (!mediaType) {
@@ -34,9 +35,9 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    log.info('replacement_started', {
+  log.info('replacement_started', {
       mediaType,
-      sceneId: scene.id,
+      sceneId: scene?.id,
       excludedAssetCount: excludedAssetIds.length
     });
 
@@ -45,8 +46,8 @@ router.post('/', async (req, res) => {
         // validateScenesJson wrapped the scene as id 1 so it could reuse the
         // normal sequence checks. Restore the original scene id before sending
         // the response so the browser can replace the correct card.
-        ...validationResult.scenes[0],
-        id: scene.id
+        ...(validationResult.scenes || [])[0],
+        id: Number(scene?.id) || 1
       },
       mediaType,
       excludedAssetIds
@@ -68,17 +69,19 @@ router.post('/', async (req, res) => {
       result
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch a replacement result.';
+
     log.error('replacement_failed', {
-      message: error.message,
+      message,
       sceneId: scene?.id
     });
 
     return res.status(500).json({
       valid: false,
-      message: error.message || 'Failed to fetch a replacement result.',
+      message,
       errors: ['The replacement fetch step did not complete.']
     });
   }
 });
 
-module.exports = router;
+export default router;

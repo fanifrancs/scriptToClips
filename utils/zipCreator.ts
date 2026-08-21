@@ -1,6 +1,12 @@
-const archiver = require('archiver');
-const axios = require('axios');
-const { DEFAULT_MEDIA_TYPE, MEDIA_TYPES, normalizeMediaType } = require('./mediaTypes');
+import type { Archiver } from 'archiver';
+import axios from 'axios';
+import { DEFAULT_MEDIA_TYPE, MEDIA_TYPES, normalizeMediaType } from './mediaTypes';
+import type { MediaCandidate, MediaType, SceneProcessingResult, ZipOptions, ZipResponse } from './types';
+
+const createArchiver = require('archiver') as (
+  format: 'zip',
+  options: { zlib: { level: number } }
+) => Archiver;
 
 // A ZIP can feel "stuck" when one remote Pexels file is slow to respond.
 // Keeping a bounded per-file timeout lets the archive continue and records the
@@ -9,9 +15,24 @@ const { DEFAULT_MEDIA_TYPE, MEDIA_TYPES, normalizeMediaType } = require('./media
 const ASSET_DOWNLOAD_TIMEOUT_MS = Number(process.env.ASSET_DOWNLOAD_TIMEOUT_MS || 15000);
 const ZIP_COMPRESSION_LEVEL = Number(process.env.ZIP_COMPRESSION_LEVEL || 6);
 
-async function streamResultsZip(results, res, options = {}) {
+interface NormalizedZipOptions {
+  includeMetadata: boolean;
+  includeSceneText: boolean;
+  selectedOnly: boolean;
+}
+
+type DownloadableScene = Partial<SceneProcessingResult> & {
+  videos?: MediaCandidate[];
+  assets?: MediaCandidate[];
+};
+
+export async function streamResultsZip(
+  results: DownloadableScene[],
+  res: ZipResponse,
+  options: ZipOptions = {}
+) {
   const zipOptions = normalizeZipOptions(options);
-  const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION_LEVEL } });
+  const archive = createArchiver('zip', { zlib: { level: ZIP_COMPRESSION_LEVEL } });
 
   // archiver emits errors on the archive object, while Express emits completion
   // on the response. Waiting on both keeps the route from logging success before
@@ -41,7 +62,7 @@ async function streamResultsZip(results, res, options = {}) {
 
     const failedDownloads = [];
     const assetManifest = assets.length > 0
-      ? assets.map((asset, assetIndex) => {
+      ? assets.map((asset: MediaCandidate, assetIndex: number) => {
         const assetName = buildAssetFileName(asset, assetIndex, mediaType);
         const assetLabel = mediaType === MEDIA_TYPES.IMAGE ? 'image' : 'clip';
 
@@ -81,8 +102,10 @@ async function streamResultsZip(results, res, options = {}) {
 
         archive.append(response.data, { name: `${folderName}/${assetName}` });
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown download failure';
+
         failedDownloads.push(
-          `${mediaType === MEDIA_TYPES.IMAGE ? 'image' : 'clip'} ${assetIndex + 1}: ${asset.pexelsUrl || asset.url} -> ${error.message}`
+          `${mediaType === MEDIA_TYPES.IMAGE ? 'image' : 'clip'} ${assetIndex + 1}: ${asset.pexelsUrl || asset.url} -> ${message}`
         );
       }
     }
@@ -100,7 +123,7 @@ async function streamResultsZip(results, res, options = {}) {
 
 // Options are intentionally additive: if the browser does not send any
 // packaging settings, downloads behave exactly as the older app did.
-function normalizeZipOptions(options = {}) {
+function normalizeZipOptions(options: ZipOptions = {}): NormalizedZipOptions {
   return {
     includeMetadata: options.includeMetadata !== false,
     includeSceneText: options.includeSceneText !== false,
@@ -108,15 +131,15 @@ function normalizeZipOptions(options = {}) {
   };
 }
 
-function buildSceneFolderName(scene, index) {
+function buildSceneFolderName(scene: DownloadableScene, index: number) {
   const label = truncateText(scene?.sceneText || 'scene', 40);
   const safeLabel = sanitizeFileName(label) || 'scene';
   return `scene_${index + 1}_${safeLabel}`;
 }
 
-function getSceneAssets(scene = {}, options = {}) {
+function getSceneAssets(scene: DownloadableScene = {}, options: Partial<NormalizedZipOptions> = {}) {
   const selectedOnly = options.selectedOnly === true;
-  const filterAssets = assets => selectedOnly
+  const filterAssets = (assets: MediaCandidate[]) => selectedOnly
     ? assets.filter(asset => asset?.isSelected !== false)
     : assets;
 
@@ -131,13 +154,13 @@ function getSceneAssets(scene = {}, options = {}) {
   return [];
 }
 
-function resolveSceneMediaType(scene = {}, fallbackMediaType) {
+function resolveSceneMediaType(scene: DownloadableScene = {}, fallbackMediaType?: ZipOptions['mediaType']): MediaType {
   const sceneMediaType = normalizeMediaType(scene.mediaType);
   const normalizedFallback = normalizeMediaType(fallbackMediaType);
   return sceneMediaType || normalizedFallback || inferMediaTypeFromAssets(getSceneAssets(scene)) || DEFAULT_MEDIA_TYPE;
 }
 
-function inferMediaTypeFromAssets(assets = []) {
+function inferMediaTypeFromAssets(assets: MediaCandidate[] = []): MediaType | null {
   const firstAsset = assets.find(asset => asset);
 
   if (!firstAsset) {
@@ -151,7 +174,7 @@ function inferMediaTypeFromAssets(assets = []) {
   return MEDIA_TYPES.IMAGE;
 }
 
-function buildAssetFileName(asset, index, mediaType) {
+function buildAssetFileName(asset: MediaCandidate, index: number, mediaType: MediaType) {
   const extension = detectExtension(asset?.url) || getDefaultExtension(mediaType);
   const prefix = mediaType === MEDIA_TYPES.IMAGE ? 'image' : 'clip';
   return `${prefix}_${index + 1}.${extension}`;
@@ -162,11 +185,11 @@ function detectExtension(url = '') {
   return match ? match[1].toLowerCase() : null;
 }
 
-function getDefaultExtension(mediaType) {
+function getDefaultExtension(mediaType: MediaType) {
   return mediaType === MEDIA_TYPES.IMAGE ? 'jpg' : 'mp4';
 }
 
-function formatResolution(asset = {}) {
+function formatResolution(asset: Partial<MediaCandidate> = {}) {
   if (!asset.width || !asset.height) {
     return 'unknown';
   }
@@ -174,7 +197,7 @@ function formatResolution(asset = {}) {
   return `${asset.width}x${asset.height}`;
 }
 
-function formatDuration(asset = {}) {
+function formatDuration(asset: Partial<MediaCandidate> = {}) {
   if (!Number.isFinite(asset.duration)) {
     return 'n/a';
   }
@@ -192,5 +215,3 @@ function sanitizeFileName(value = '') {
 function truncateText(value = '', maxLength = 40) {
   return String(value).slice(0, maxLength).trim();
 }
-
-module.exports = { streamResultsZip };

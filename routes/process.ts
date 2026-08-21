@@ -1,8 +1,8 @@
-const express = require('express');
-const { processScenes } = require('../utils/mediaPipeline');
-const { validateScenesJson } = require('../utils/sceneJsonValidator');
-const { DEFAULT_MEDIA_TYPE, getMediaTypeDetails, normalizeMediaType } = require('../utils/mediaTypes');
-const { createRequestLogger } = require('../utils/logger');
+import express from 'express';
+import { createRequestLogger } from '../utils/logger';
+import { DEFAULT_MEDIA_TYPE, getMediaTypeDetails, normalizeMediaType } from '../utils/mediaTypes';
+import { processScenes } from '../utils/mediaPipeline';
+import { validateScenesJson } from '../utils/sceneJsonValidator';
 
 const router = express.Router();
 
@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
   try {
     // From this point forward, scenes are normalized by the validator:
     // sequential ids, trimmed sceneText, and at most two lowercase queries.
-    const scenes = validationResult.scenes;
+    const scenes = validationResult.scenes || [];
     const mediaDetails = getMediaTypeDetails(mediaType);
 
     log.info('media_processing_started', {
@@ -69,17 +69,19 @@ router.post('/', async (req, res) => {
   } catch (error) {
     // This catch covers remote API failures and unexpected pipeline errors.
     // Validation errors are handled above so they can keep their 400 status.
+    const message = error instanceof Error ? error.message : 'Failed to fetch media from Pexels.';
+
     log.error('media_processing_failed', {
       mediaType,
-      message: error.message
+      message
     });
 
     return res.status(500).json({
       valid: false,
-      message: error.message || 'Failed to fetch media from Pexels.',
+      message,
       errors: ['The media fetch step did not complete.']
     });
   }
 });
 
-module.exports = router;
+export default router;
