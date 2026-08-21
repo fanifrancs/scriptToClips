@@ -6,6 +6,9 @@ const VIDEO_SEARCH_URL = 'https://api.pexels.com/videos/search';
 const PHOTO_SEARCH_URL = 'https://api.pexels.com/v1/search';
 
 async function searchVideos(query, perPage = 5) {
+  // Pexels videos include several encodes for each result. The app exposes one
+  // downloadable URL per candidate, so each video is normalized to the best mp4
+  // file plus common metadata used by both rankers and the ZIP manifest.
   const response = await searchPexels(VIDEO_SEARCH_URL, query, perPage);
 
   return response.data.videos.map(video => {
@@ -33,6 +36,9 @@ async function searchVideos(query, perPage = 5) {
 }
 
 async function searchPhotos(query, perPage = 5) {
+  // Photo search returns a src object with multiple sizes. The app keeps an
+  // original/high-quality URL for ZIP output and smaller URLs for browser
+  // preview/thumbnail display.
   const response = await searchPexels(PHOTO_SEARCH_URL, query, perPage);
 
   return response.data.photos.map(photo => {
@@ -63,6 +69,8 @@ async function searchPexels(url, query, perPage) {
   }
 
   try {
+    // axios builds the query string from params and sends the Pexels API key in
+    // the Authorization header required by Pexels.
     return await axios.get(url, {
       headers: { Authorization: API_KEY },
       params: { query, per_page: perPage }
@@ -73,30 +81,37 @@ async function searchPexels(url, query, perPage) {
 }
 
 function pickVideoFile(videoFiles = []) {
-  const mp4Files = videoFiles.filter(file => file.file_type === 'video/mp4');
+  // Choose the best mp4 in one pass instead of sorting the full list. The
+  // quality comparison below mirrors the old sort order: resolution first,
+  // then quality label, then file id as a deterministic tie-breaker.
+  return videoFiles.reduce((bestFile, file) => {
+    if (file.file_type !== 'video/mp4') {
+      return bestFile;
+    }
 
-  if (mp4Files.length === 0) {
-    return null;
-  }
+    if (!bestFile || isBetterVideoFile(file, bestFile)) {
+      return file;
+    }
 
-  return [...mp4Files].sort(compareVideoFilesByQuality)[0] || null;
+    return bestFile;
+  }, null);
 }
 
-function compareVideoFilesByQuality(left, right) {
-  const leftPixels = getPixelCount(left);
-  const rightPixels = getPixelCount(right);
+function isBetterVideoFile(candidate, currentBest) {
+  const candidatePixels = getPixelCount(candidate);
+  const currentPixels = getPixelCount(currentBest);
 
-  if (rightPixels !== leftPixels) {
-    return rightPixels - leftPixels;
+  if (candidatePixels !== currentPixels) {
+    return candidatePixels > currentPixels;
   }
 
-  const qualityDelta = getQualityRank(right?.quality) - getQualityRank(left?.quality);
+  const qualityDelta = getQualityRank(candidate?.quality) - getQualityRank(currentBest?.quality);
 
   if (qualityDelta !== 0) {
-    return qualityDelta;
+    return qualityDelta > 0;
   }
 
-  return getFileId(right) - getFileId(left);
+  return getFileId(candidate) > getFileId(currentBest);
 }
 
 function getPixelCount(videoFile = {}) {
@@ -128,6 +143,8 @@ function getFileId(videoFile = {}) {
 }
 
 function deriveVideoTitle(pexelsUrl = '') {
+  // Pexels URLs usually end with a slug and numeric id. Splitting before the
+  // final dash removes that id and turns the slug into readable metadata.
   const slug = pexelsUrl
     .split('/video/')[1]
     ?.split('-')
@@ -186,6 +203,8 @@ function pickPhotoThumbnailUrl(photoSource = {}) {
 }
 
 function determineOrientation(width, height) {
+  // Orientation is computed once at API-normalization time so later UI, image
+  // selection, and ZIP manifest code can use the same simple field.
   if (!width || !height) {
     return 'unknown';
   }

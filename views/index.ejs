@@ -18,16 +18,19 @@
 <body>
   <main class="page-shell">
     <div class="container">
-      <section class="hero-card p-4 p-lg-5 mb-4">
+      <!-- Hero: quick orientation for first-time users. The actual workflow is
+           still visible below; this page is a working tool, not a separate
+           marketing landing page. -->
+      <section class="hero-card p-3 p-lg-4 mb-3">
         <div class="row g-4 align-items-center">
           <div class="col-lg-8">
             <h1 class="display-title mb-3">ScriptToClips</h1>
-            <p class="lead lead-copy mb-4">
+            <p class="lead lead-copy mb-3">
               Turn a written script into scene-by-scene stock media search input. Start with ChatGPT for script parsing, then paste the JSON here so the app can validate it and prepare for video or picture matching.
             </p>
-            <div class="d-flex flex-wrap gap-3">
-              <a class="btn btn-accent btn-lg px-4" href="#workspace">Start With Step 1</a>
-              <a class="btn btn-outline-light btn-lg px-4" href="#steps">See How It Works</a>
+            <div class="d-flex flex-wrap gap-2">
+              <a class="btn btn-accent px-3" href="#workspace">Start With Step 1</a>
+              <a class="btn btn-outline-light px-3" href="#steps">See How It Works</a>
             </div>
           </div>
           <div class="col-lg-4">
@@ -51,10 +54,12 @@
         </div>
       </section>
 
-      <section id="steps" class="row g-4 mb-4">
+      <!-- Steps: explains why the app starts with ChatGPT-generated JSON
+           instead of asking for a raw script directly. -->
+      <section id="steps" class="row g-3 mb-3">
         <div class="col-lg-6">
-          <article class="step-card p-4 h-100">
-            <div class="d-flex align-items-center gap-3 mb-3">
+          <article class="step-card p-3 h-100">
+            <div class="d-flex align-items-center gap-2 mb-2">
               <div class="step-number">1</div>
               <div>
                 <p class="section-label mb-1">Script Parsing</p>
@@ -70,8 +75,8 @@
           </article>
         </div>
         <div class="col-lg-6">
-          <article class="step-card p-4 h-100">
-            <div class="d-flex align-items-center gap-3 mb-3">
+          <article class="step-card p-3 h-100">
+            <div class="d-flex align-items-center gap-2 mb-2">
               <div class="step-number">2</div>
               <div>
                 <p class="section-label mb-1">Media Prep</p>
@@ -88,23 +93,26 @@
         </div>
       </section>
 
-      <section id="workspace" class="row g-4 align-items-stretch">
+      <!-- Workspace: left side holds the reusable prompt, right side holds the
+           JSON submission form that the frontend enhances with review/fetch
+           behavior. -->
+      <section id="workspace" class="row g-3 align-items-stretch">
         <div class="col-xl-6">
-          <div class="workspace-card p-4 h-100">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+          <div class="workspace-card p-3 h-100">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <div>
                 <p class="section-label mb-1">Prompt For ChatGPT</p>
                 <h2 class="h4 mb-0">Copy this prompt</h2>
               </div>
-              <button class="btn btn-outline-light" id="copyPromptButton" type="button">Copy Prompt</button>
+              <button class="btn btn-outline-light btn-sm" id="copyPromptButton" type="button">Copy Prompt</button>
             </div>
             <textarea id="chatgptPrompt" class="prompt-box" readonly><%= chatGptPrompt %></textarea>
           </div>
         </div>
 
         <div class="col-xl-6">
-          <div class="workspace-card p-4 h-100">
-            <div class="mb-3">
+          <div class="workspace-card p-3 h-100">
+            <div class="mb-2">
               <p class="section-label mb-1">Scene JSON Input</p>
               <h2 class="h4 mb-0">Paste ChatGPT output</h2>
             </div>
@@ -115,6 +123,8 @@
               data-ranking-message="<%= initialRankingStatus.message %>"
               data-ranking-mode="<%= initialRankingStatus.appliedMode %>"
             >
+              <!-- data-ranking-mode is read by public/scripts/index.js to decide
+                   whether loading copy should mention OpenAI or heuristic mode. -->
               <label class="form-label helper-text" for="scenesJson">
                 Paste the full JSON array exactly as ChatGPT generated it.
               </label>
@@ -150,8 +160,9 @@
 ]'
                 required
               ></textarea>
-              <div class="d-flex flex-wrap gap-3 align-items-center">
-                <button class="btn btn-accent px-4 py-2" type="submit" id="submitButton">Get Videos</button>
+              <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button class="btn btn-outline-light px-3 py-2" type="button" id="reviewButton">Review Scenes</button>
+                <button class="btn btn-accent px-3 py-2" type="submit" id="submitButton">Get Videos</button>
                 <span id="formStatus" class="status-chip">Waiting for JSON input</span>
               </div>
             </form>
@@ -159,18 +170,34 @@
         </div>
 
         <div class="col-12">
-          <div class="response-card p-4">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+          <div class="response-card p-3">
+            <!-- Results area: initially static HTML, then fully owned by the
+                 frontend after validation/fetch/replace actions. -->
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <div>
                 <p class="section-label mb-1">Result Matches</p>
                 <h2 class="h4 mb-0">Scene-by-scene Pexels matches</h2>
               </div>
               <span class="footer-note">Each scene appears with the ranked Pexels videos or pictures fetched for it.</span>
             </div>
+            <div class="progress-panel" id="progressPanel" hidden>
+              <div class="progress-track">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+              <ol class="progress-steps" id="progressSteps"></ol>
+            </div>
             <div class="results-action-bar">
-              <button class="btn btn-accent results-download-btn" id="downloadTopButton" type="button" disabled>
-                Download All
-              </button>
+              <div class="download-action-stack">
+                <div class="download-options">
+                  <label><input type="checkbox" id="selectedOnlyOption" checked> Selected assets only</label>
+                  <label><input type="checkbox" id="metadataOption" checked> Include metadata</label>
+                  <label><input type="checkbox" id="sceneTextOption" checked> Include scene text</label>
+                </div>
+                <button class="btn btn-accent results-download-btn" id="downloadTopButton" type="button" disabled>
+                  Download Clips
+                </button>
+                <p class="download-status" data-download-status hidden></p>
+              </div>
             </div>
             <div id="resultsContainer" class="results-shell">
               <div class="results-state">
@@ -181,15 +208,46 @@
               </div>
             </div>
             <div class="results-action-bar results-action-bar-bottom">
-              <button class="btn btn-accent results-download-btn" id="downloadBottomButton" type="button" disabled>
-                Download All
-              </button>
+              <div class="download-action-stack">
+                <button class="btn btn-accent results-download-btn" id="downloadBottomButton" type="button" disabled>
+                  Download Clips
+                </button>
+                <p class="download-status" data-download-status hidden></p>
+              </div>
             </div>
           </div>
         </div>
       </section>
+      <div class="page-reset-bar">
+        <button class="btn btn-outline-light btn-sm" id="clearSessionButton" type="button">Clear Saved Session</button>
+      </div>
     </div>
   </main>
+  <!-- Review modal: dynamically filled from reviewedScenes. The same fields
+       write back into the textarea so the submitted JSON stays inspectable. -->
+  <div class="review-modal" id="reviewModal" aria-hidden="true">
+    <div class="review-modal-backdrop" data-close-review-modal></div>
+    <section class="review-modal-panel" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+      <header class="review-modal-header">
+        <div>
+          <p class="section-label mb-1">Scene Review</p>
+          <h2 class="h4 mb-0" id="reviewModalTitle">Edit scenes before fetching media</h2>
+        </div>
+        <button class="btn btn-outline-light btn-sm" type="button" data-close-review-modal>Close</button>
+      </header>
+      <div id="reviewContainer" class="review-shell">
+        <div class="results-state">
+          <p class="results-state-title">No scenes reviewed yet</p>
+          <p class="results-state-copy mb-0">Click Review Scenes after pasting JSON to edit scene text and search queries.</p>
+        </div>
+      </div>
+      <footer class="review-modal-footer">
+        <span class="footer-note">Changes here update the JSON that gets submitted.</span>
+        <button class="btn btn-accent btn-sm" type="button" data-close-review-modal>Done</button>
+      </footer>
+    </section>
+  </div>
+  <!-- Back-to-top is controlled by scroll state in index.js. -->
   <button class="back-to-top-btn" id="backToTopButton" type="button" aria-label="Back to top">
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M12 5l-7 7 1.4 1.4 4.6-4.6V19h2V8.8l4.6 4.6L19 12z"></path>

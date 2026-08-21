@@ -1,4 +1,9 @@
+// The validator is shared by both the review step and the final fetch step.
+// Keeping validation in one file means the browser and backend do not drift
+// into slightly different ideas of what a "valid scene" means.
 function validateScenesJson(rawInput) {
+  // The validator returns one consistent response shape for success and failure
+  // so routes can pass validationResult directly back to the browser.
   if (!rawInput || !rawInput.trim()) {
     return {
       valid: false,
@@ -39,6 +44,9 @@ function validateScenesJson(rawInput) {
   parsedInput.forEach((scene, index) => {
     const sceneNumber = index + 1;
 
+    // Scene ids must be sequential because the UI uses them as stable labels
+    // and replacement targets. Allowing arbitrary ids would make reorder/remove
+    // operations more confusing.
     if (!scene || typeof scene !== 'object' || Array.isArray(scene)) {
       errors.push(`Scene ${sceneNumber} must be an object.`);
       return;
@@ -70,6 +78,9 @@ function validateScenesJson(rawInput) {
     scene.searchQueries.forEach((query, queryIndex) => {
       const label = `Scene ${sceneNumber} searchQueries[${queryIndex}]`;
 
+      // Lowercase/trim rules make duplicate query detection and Pexels caching
+      // predictable. Users get explicit feedback instead of silent cleanup when
+      // the pasted JSON does not follow the prompt.
       if (typeof query !== 'string' || !query.trim()) {
         errors.push(`${label} must be a non-empty string.`);
         return;
@@ -91,8 +102,23 @@ function validateScenesJson(rawInput) {
       ? 'JSON is valid and matches the expected scene format.'
       : 'JSON is not valid for the expected scene format.',
     sceneCount: parsedInput.length,
-    errors
+    errors,
+    scenes: errors.length === 0 ? normalizeScenes(parsedInput) : []
   };
 }
 
-module.exports = { validateScenesJson };
+// Normalization trims display text and lowercases query values after validation
+// confirms that the user supplied a safe shape. The app stores and submits this
+// normalized version so the final media request is predictable.
+function normalizeScenes(scenes = []) {
+  return scenes.map((scene, index) => ({
+    id: index + 1,
+    sceneText: String(scene.sceneText || '').trim(),
+    searchQueries: scene.searchQueries
+      .map(query => String(query || '').trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 2)
+  }));
+}
+
+module.exports = { normalizeScenes, validateScenesJson };

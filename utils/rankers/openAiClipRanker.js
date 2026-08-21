@@ -15,6 +15,8 @@ async function rankWithOpenAI({
   const client = getOpenAIClient(apiKey);
   const rankingSchema = buildRankingSchema(maxSelections);
 
+  // The Responses API is asked for schema-constrained JSON so downstream code
+  // can parse selections without scraping natural-language text.
   const response = await client.responses.create({
     model,
     instructions: [
@@ -59,6 +61,7 @@ async function rankWithOpenAI({
   }
 
   const seenCandidateIds = new Set();
+  const candidatesById = new Map(candidates.map(candidate => [String(candidate.id), candidate]));
 
   return (parsedOutput.selections || [])
     .filter(selection => {
@@ -74,7 +77,7 @@ async function rankWithOpenAI({
       return true;
     })
     .map(selection => {
-      const matchedCandidate = candidates.find(candidate => candidate.id === selection.id);
+      const matchedCandidate = candidatesById.get(String(selection.id));
 
       if (!matchedCandidate) {
         return null;
@@ -93,6 +96,8 @@ async function rankWithOpenAI({
 }
 
 function getOpenAIClient(apiKey) {
+  // Reuse one client instance for the process. The API key is read from env at
+  // startup in clipRanker.js, so recreating a client per scene adds no value.
   if (!openaiClient) {
     openaiClient = new OpenAI({ apiKey });
   }
@@ -101,6 +106,8 @@ function getOpenAIClient(apiKey) {
 }
 
 function buildRankingInput({ mediaType, sceneText, searchQueries, candidates, maxSelections }) {
+  // The input alternates text metadata and preview images. Low image detail is
+  // enough for visual relevance checks and is cheaper/faster than high detail.
   const content = [
     {
       type: 'input_text',
@@ -148,6 +155,9 @@ function buildRankingInput({ mediaType, sceneText, searchQueries, candidates, ma
 }
 
 function buildRankingSchema(maxSelections) {
+  // The schema restricts the model to candidate ids, integer scores, and short
+  // reasons. maxItems protects callers from receiving more assets than the UI
+  // is prepared to render for a scene.
   return {
     type: 'object',
     additionalProperties: false,

@@ -13,6 +13,9 @@ async function rankMediaCandidates({ mediaType, sceneText, searchQueries, candid
     };
   }
 
+  // Ensure every candidate has a sourceQueries array before passing it into
+  // either ranker. The heuristic ranker joins this field, and the OpenAI prompt
+  // includes it as metadata.
   const candidateEntries = candidates.map(candidate => ({
     ...candidate,
     sourceQueries: Array.isArray(candidate.sourceQueries) ? candidate.sourceQueries : []
@@ -21,6 +24,8 @@ async function rankMediaCandidates({ mediaType, sceneText, searchQueries, candid
   const minimumRankScore = Number(process.env.MIN_CLIP_RANK_SCORE || 70);
 
   if (!OPENAI_API_KEY) {
+    // Missing OpenAI credentials should not make local development unusable
+    // unless the env explicitly disables the heuristic fallback.
     if (!HEURISTIC_FALLBACK_ENABLED) {
       throw new Error('Missing OPENAI_API_KEY in environment.');
     }
@@ -45,6 +50,8 @@ async function rankMediaCandidates({ mediaType, sceneText, searchQueries, candid
   }
 
   try {
+    // OpenAI is preferred because it can inspect preview images and reason
+    // about visual match quality beyond keyword overlap.
     return {
       assets: await rankWithOpenAI({
         apiKey: OPENAI_API_KEY,
@@ -65,6 +72,8 @@ async function rankMediaCandidates({ mediaType, sceneText, searchQueries, candid
       }
     };
   } catch (error) {
+    // Only fall back for errors where a heuristic answer is likely better than
+    // failing the whole request. Unexpected coding/network issues still surface.
     if (!HEURISTIC_FALLBACK_ENABLED || !shouldUseHeuristicFallback(error)) {
       throw error;
     }
@@ -121,6 +130,8 @@ function getInitialRankingStatus() {
 }
 
 function summarizeRankingStatus(statuses = []) {
+  // The browser needs one status message for the whole run even though each
+  // scene can independently use OpenAI or fallback heuristics.
   if (!Array.isArray(statuses) || statuses.length === 0) {
     return buildInitialRankingStatus();
   }

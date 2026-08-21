@@ -2,8 +2,20 @@ const archiver = require('archiver');
 const axios = require('axios');
 const { DEFAULT_MEDIA_TYPE, MEDIA_TYPES, normalizeMediaType } = require('./mediaTypes');
 
+// A ZIP can feel "stuck" when one remote Pexels file is slow to respond.
+// Keeping a bounded per-file timeout lets the archive continue and records the
+// skipped file in download-errors.txt instead of leaving the user waiting too
+// long with no result.
+const ASSET_DOWNLOAD_TIMEOUT_MS = Number(process.env.ASSET_DOWNLOAD_TIMEOUT_MS || 15000);
+const ZIP_COMPRESSION_LEVEL = Number(process.env.ZIP_COMPRESSION_LEVEL || 6);
+
 async function streamResultsZip(results, res, options = {}) {
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const zipOptions = normalizeZipOptions(options);
+  const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION_LEVEL } });
+
+  // archiver emits errors on the archive object, while Express emits completion
+  // on the response. Waiting on both keeps the route from logging success before
+  // the ZIP actually finishes streaming to the browser.
   const archiveCompletion = new Promise((resolve, reject) => {
     archive.on('error', reject);
     res.on('finish', resolve);
@@ -16,12 +28,16 @@ async function streamResultsZip(results, res, options = {}) {
   archive.pipe(res);
 
   for (const [index, scene] of results.entries()) {
+    // Each scene gets its own folder so the final ZIP remains understandable
+    // even when a script contains many scenes.
     const folderName = buildSceneFolderName(scene, index);
     const sceneText = typeof scene.sceneText === 'string' ? scene.sceneText : '';
     const mediaType = resolveSceneMediaType(scene, options.mediaType);
-    const assets = getSceneAssets(scene);
+    const assets = getSceneAssets(scene, zipOptions);
 
-    archive.append(sceneText, { name: `${folderName}/scene.txt` });
+    if (zipOptions.includeSceneText) {
+      archive.append(sceneText, { name: `${folderName}/scene.txt` });
+    }
 
     const failedDownloads = [];
     const assetManifest = assets.length > 0
@@ -43,7 +59,10 @@ async function streamResultsZip(results, res, options = {}) {
       }).join('\n\n')
       : 'No assets were available for this scene.';
 
-    archive.append(assetManifest, { name: `${folderName}/assets.txt` });
+    if (zipOptions.includeMetadata) {
+      archive.append(assetManifest, { name: `${folderName}/assets.txt` });
+      archive.append(JSON.stringify(scene, null, 2), { name: `${folderName}/scene-data.json` });
+    }
 
     for (const [assetIndex, asset] of assets.entries()) {
       if (!asset?.url) {
@@ -52,9 +71,12 @@ async function streamResultsZip(results, res, options = {}) {
 
       try {
         const assetName = buildAssetFileName(asset, assetIndex, mediaType);
+
+        // Remote Pexels files are streamed into the archive instead of being
+        // buffered fully in memory. That matters for large video downloads.
         const response = await axios.get(asset.url, {
           responseType: 'stream',
-          timeout: 30000
+          timeout: ASSET_DOWNLOAD_TIMEOUT_MS
         });
 
         archive.append(response.data, { name: `${folderName}/${assetName}` });
@@ -76,19 +98,34 @@ async function streamResultsZip(results, res, options = {}) {
   await archiveCompletion;
 }
 
+// Options are intentionally additive: if the browser does not send any
+// packaging settings, downloads behave exactly as the older app did.
+function normalizeZipOptions(options = {}) {
+  return {
+    includeMetadata: options.includeMetadata !== false,
+    includeSceneText: options.includeSceneText !== false,
+    selectedOnly: options.selectedOnly === true
+  };
+}
+
 function buildSceneFolderName(scene, index) {
   const label = truncateText(scene?.sceneText || 'scene', 40);
   const safeLabel = sanitizeFileName(label) || 'scene';
   return `scene_${index + 1}_${safeLabel}`;
 }
 
-function getSceneAssets(scene = {}) {
+function getSceneAssets(scene = {}, options = {}) {
+  const selectedOnly = options.selectedOnly === true;
+  const filterAssets = assets => selectedOnly
+    ? assets.filter(asset => asset?.isSelected !== false)
+    : assets;
+
   if (Array.isArray(scene.assets)) {
-    return scene.assets;
+    return filterAssets(scene.assets);
   }
 
   if (Array.isArray(scene.videos)) {
-    return scene.videos;
+    return filterAssets(scene.videos);
   }
 
   return [];

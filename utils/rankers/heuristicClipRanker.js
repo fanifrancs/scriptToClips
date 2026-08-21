@@ -12,6 +12,9 @@ function rankWithHeuristics({
   minimumRankScore,
   fallbackReason
 }) {
+  // The heuristic ranker is intentionally transparent and cheap. It scores
+  // keyword overlap, source query overlap, duration, resolution, and orientation
+  // so the app can still return usable results when OpenAI is unavailable.
   const sceneKeywords = extractKeywords(sceneText);
   const queryKeywords = extractKeywords(searchQueries.join(' '));
   const scoringKeywords = [...new Set([...sceneKeywords, ...queryKeywords])];
@@ -28,6 +31,9 @@ function rankWithHeuristics({
 
       let score = 35;
 
+      // Keyword overlap is the strongest signal because Pexels metadata is
+      // text-first. The score starts below the acceptance threshold so weak
+      // candidates need multiple supporting signals to survive.
       score += overlappingKeywords.length * 12;
 
       if (candidate.sourceQueries.some(query => searchQueries.includes(query))) {
@@ -70,6 +76,9 @@ function rankWithHeuristics({
 }
 
 function extractKeywords(text = '') {
+  // Lowercase tokenization plus stop-word removal keeps common filler words
+  // from inflating scores. The Set also prevents repeated words from counting
+  // multiple times.
   return [...new Set(
     String(text)
       .toLowerCase()
@@ -79,6 +88,8 @@ function extractKeywords(text = '') {
 }
 
 function buildHeuristicReason({ mediaType, overlappingKeywords, candidate, fallbackReason }) {
+  // Reasons are included in the UI and ZIP metadata, so they are written as
+  // human-facing notes instead of raw scoring internals.
   const matchedTerms = overlappingKeywords.length > 0
     ? `Matched terms: ${overlappingKeywords.slice(0, 4).join(', ')}.`
     : 'Matched through source query overlap and metadata similarity.';

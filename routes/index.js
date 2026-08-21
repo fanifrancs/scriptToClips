@@ -42,7 +42,10 @@ const chatGptPrompt = `Generate a JSON output for a script I am going to provide
 * Each scene must have a unique incremental id starting from 1.
 * Output must be valid JSON only (no extra text, comments, or trailing commas).`;
 
-// Root endpoint
+// Root endpoint. The backend injects two pieces of data into the page:
+// 1. chatGptPrompt: the exact prompt shown in the readonly textarea.
+// 2. initialRankingStatus: tells the browser whether OpenAI ranking appears
+//    available, so the loading copy can set user expectations.
 router.get('/', (req, res) => {
   res.render('index', {
     chatGptPrompt,
