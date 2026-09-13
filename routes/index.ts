@@ -24,8 +24,9 @@ const chatGptPrompt = `Generate a JSON output for a script I am going to provide
 * Do not invent, infer, expand, or introduce any context that is not explicitly present in the script.
 * Each scene should match a sentence or a very small concrete part of a sentence from the script.
 * Split the script into very simple, minimal scenes. Each scene must describe only one single action, image, or point of interest.
-* sceneText must be clear, short, concrete, and descriptive.
-* sceneText should stay close to the script wording, but cleaned up into a simple visual description.
+* sceneText must be taken verbatim from the original script as much as possible.
+* Only change sceneText when a correction or clearer rephrasing is truly needed, and even then preserve the original grammar structure as closely as possible.
+* Do not summarize, reinterpret, or convert sceneText into a new visual description if the original script wording can be retained.
 * searchQueries must be highly relevant visual search phrases optimized for stock media search on Pexels.
 * Each searchQueries array must contain at most 2 search queries.
 * Each search query should be short, usually 2 to 5 words long.

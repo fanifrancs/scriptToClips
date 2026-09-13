@@ -1,13 +1,11 @@
+import 'dotenv/config';
 import express from 'express';
-import dotenv from 'dotenv';
 import path from 'path';
 import downloadRoutes from './routes/download';
 import indexRoutes from './routes';
 import processRoutes from './routes/process';
 import replaceRoutes from './routes/replace';
 import reviewRoutes from './routes/review';
-
-dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;

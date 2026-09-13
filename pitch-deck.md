@@ -78,7 +78,7 @@ The workflow is intentionally simple. The creator remains in control, but the re
 ## 6. Key Features
 
 - Scene JSON validation with clear error messages
-- Review modal for editing scenes before media fetching
+- Inline results-section editing for scene text and search queries
 - Pexels video and photo search
 - Highest-quality available MP4 selection for videos
 - High-quality photo source selection for images
@@ -247,4 +247,3 @@ The immediate goal is validation: put this in front of real creators, measure ti
 Instead of manually searching, previewing, downloading, and organizing stock media scene by scene, creators can generate a structured media pack ready for editing.
 
 **Next step:** run pilot workflows with real scripts and measure time saved per finished video.
-

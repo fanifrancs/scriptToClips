@@ -13,9 +13,6 @@ const chatgptPrompt = document.getElementById('chatgptPrompt');
 const form = document.getElementById('sceneJsonForm');
 const scenesJson = document.getElementById('scenesJson');
 const mediaTypeInputs = [...document.querySelectorAll('input[name="mediaType"]')];
-const reviewButton = document.getElementById('reviewButton');
-const reviewModal = document.getElementById('reviewModal');
-const reviewContainer = document.getElementById('reviewContainer');
 const resultsContainer = document.getElementById('resultsContainer');
 const formStatus = document.getElementById('formStatus');
 const submitButton = document.getElementById('submitButton');
@@ -46,7 +43,6 @@ restoreSession();
 bindEvents();
 syncMediaTypeUi();
 toggleBackToTopButton();
-renderReviewState();
 renderPersistedResults();
 
 function bindEvents() {
@@ -55,22 +51,6 @@ function bindEvents() {
   // file controls several workflow states.
   copyPromptButton.addEventListener('click', copyPromptToClipboard);
   clearSessionButton.addEventListener('click', clearSavedSession);
-  reviewButton.addEventListener('click', () => {
-    if (reviewedScenes.length > 0 && !hasJsonChangedSinceReview()) {
-      openReviewModal();
-      return;
-    }
-
-    void reviewScenes();
-  });
-  document.querySelectorAll('[data-close-review-modal]').forEach(element => {
-    element.addEventListener('click', closeReviewModal);
-  });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
-      closeReviewModal();
-    }
-  });
   form.addEventListener('submit', event => {
     event.preventDefault();
     void fetchMediaForReviewedScenes();
@@ -100,8 +80,8 @@ function bindEvents() {
       schedulePersistSession();
     });
   });
-  reviewContainer.addEventListener('input', handleReviewInput);
-  reviewContainer.addEventListener('click', handleReviewClick);
+  resultsContainer.addEventListener('input', handleSceneEditInput);
+  resultsContainer.addEventListener('click', handleSceneEditClick);
   resultsContainer.addEventListener('change', handleResultSelectionChange);
   resultsContainer.addEventListener('click', event => {
     const replaceButton = event.target.closest('[data-replace-scene]');
@@ -122,17 +102,14 @@ async function copyPromptToClipboard() {
 }
 
 async function reviewScenes(options = {}) {
-  const { openModal = true } = options;
-
   // Review normalizes the pasted JSON before any expensive media fetching
-  // happens. When called by Get Videos/Pictures, openModal is false so the user
-  // does not get interrupted by the editor.
+  // happens. The editable scene fields live in the results section, so this
+  // step updates that section instead of opening a separate editor.
   setProgress([
     { label: 'Reading JSON', state: 'active' },
     { label: 'Checking scene rules', state: 'waiting' },
-    { label: 'Opening review editor', state: 'waiting' }
+    { label: 'Preparing scene editor', state: 'waiting' }
   ], 10);
-  setButtonLoading(reviewButton, 'Reviewing...');
   setStatus('Checking JSON before review.');
 
   try {
@@ -142,19 +119,13 @@ async function reviewScenes(options = {}) {
     scenesJson.value = JSON.stringify(reviewedScenes, null, 2);
     reviewedScenesJsonSnapshot = scenesJson.value;
     latestResults = [];
-    renderReviewState();
-
-    if (openModal) {
-      openReviewModal();
-    }
-
     renderInitialResultsState();
     setDownloadButtonsDisabled(true);
-    setStatus(`${payload.sceneCount} scenes ready to edit.`);
+    setStatus(`${payload.sceneCount} scenes ready. You can edit them in the results section.`);
     setProgress([
       { label: 'Reading JSON', state: 'done' },
       { label: 'Checking scene rules', state: 'done' },
-      { label: 'Opening review editor', state: 'done' }
+      { label: 'Preparing scene editor', state: 'done' }
     ], 100);
     persistSession();
   } catch (error) {
@@ -163,10 +134,8 @@ async function reviewScenes(options = {}) {
     setProgress([
       { label: 'Reading JSON', state: 'done' },
       { label: 'Checking scene rules', state: 'failed' },
-      { label: 'Opening review editor', state: 'waiting' }
+      { label: 'Preparing scene editor', state: 'waiting' }
     ], 62);
-  } finally {
-    setButtonIdle(reviewButton, 'Review Scenes');
   }
 }
 
@@ -200,7 +169,7 @@ async function fetchMediaForReviewedScenes() {
 
     latestResults = markAssetsSelected(payload.results || []);
     latestMediaType = normalizeMediaType(payload.mediaType) || latestMediaType;
-    setStatus(payload.ranking?.message || 'Results fetched successfully.');
+    setStatus(payload.ranking?.message || 'Results fetched successfully. Scene text and queries remain editable below.');
     setDownloadButtonsDisabled(latestResults.length === 0);
     setProgress([
       { label: 'Validating reviewed scenes', state: 'done' },
@@ -284,13 +253,13 @@ async function ensureReviewedScenes() {
     return true;
   }
 
-  await reviewScenes({ openModal: false });
+  await reviewScenes();
   return reviewedScenes.length > 0;
 }
 
-function handleReviewInput(event) {
-  // Event delegation lets the review modal be fully re-rendered after remove or
-  // validation without reattaching listeners to each textarea/input.
+function handleSceneEditInput(event) {
+  // Event delegation keeps the displayed scene title and query chips editable
+  // in place while the hidden JSON payload stays synchronized.
   const field = event.target.closest('[data-scene-field]');
 
   if (!field) {
@@ -305,16 +274,17 @@ function handleReviewInput(event) {
   }
 
   if (field.dataset.sceneField === 'sceneText') {
-    scene.sceneText = field.value;
+    scene.sceneText = field.textContent;
   } else {
-    scene.searchQueries[Number(field.dataset.queryIndex)] = field.value;
+    scene.searchQueries[Number(field.dataset.queryIndex)] = field.textContent;
   }
 
   syncJsonFromReviewedScenes();
+  syncLatestResultsFromReviewedScenes();
   schedulePersistSession();
 }
 
-function handleReviewClick(event) {
+function handleSceneEditClick(event) {
   // Removing a scene reindexes the remaining scenes because the backend
   // requires ids to be sequential starting from 1.
   const removeButton = event.target.closest('[data-remove-scene]');
@@ -328,11 +298,22 @@ function handleReviewClick(event) {
   reviewedScenes = reviewedScenes
     .filter(scene => scene.id !== sceneId)
     .map((scene, index) => ({ ...scene, id: index + 1 }));
-  latestResults = [];
+  latestResults = latestResults
+    .filter(scene => scene.id !== sceneId)
+    .map((scene, index) => ({ ...scene, id: index + 1 }));
   syncJsonFromReviewedScenes();
-  renderReviewState();
-  renderInitialResultsState();
-  setDownloadButtonsDisabled(true);
+  if (latestResults.length > 0) {
+    renderResults({
+      mediaType: latestMediaType,
+      message: 'Scene removed.',
+      sceneCount: latestResults.length,
+      assetsFound: countAssets(latestResults),
+      results: latestResults
+    });
+  } else {
+    renderInitialResultsState();
+  }
+  setDownloadButtonsDisabled(latestResults.length === 0);
   schedulePersistSession();
 }
 
@@ -363,43 +344,29 @@ function handleResultSelectionChange(event) {
   schedulePersistSession();
 }
 
-function renderReviewState() {
+function renderSceneEditorState() {
   if (reviewedScenes.length === 0) {
-    reviewContainer.innerHTML = `
+    resultsContainer.innerHTML = `
       <div class="results-state">
-        <p class="results-state-title">No scenes reviewed yet</p>
-        <p class="results-state-copy mb-0">Click Review Scenes after pasting JSON to edit scene text and search queries.</p>
+        <p class="results-state-title">Ready to fetch results</p>
+        <p class="results-state-copy mb-0">Submit a valid scene JSON payload and editable scene rows will appear here.</p>
       </div>
     `;
     return;
   }
 
-  reviewContainer.innerHTML = reviewedScenes.map(scene => `
-    <article class="review-scene">
-      <div class="review-scene-header">
-        <strong>Scene ${scene.id}</strong>
-        <button class="btn btn-outline-light btn-sm" type="button" data-remove-scene="${scene.id}">Remove</button>
-      </div>
-      <label class="review-field">
-        <span>Scene text</span>
-        <textarea data-scene-field="sceneText" data-scene-id="${scene.id}">${escapeHtml(scene.sceneText)}</textarea>
-      </label>
-      <div class="review-query-grid">
-        ${[0, 1].map(index => `
-          <label class="review-field">
-            <span>Search query ${index + 1}</span>
-            <input
-              type="text"
-              value="${escapeHtml(scene.searchQueries[index] || '')}"
-              data-scene-field="searchQuery"
-              data-scene-id="${scene.id}"
-              data-query-index="${index}"
-            >
-          </label>
-        `).join('')}
-      </div>
-    </article>
-  `).join('');
+  resultsContainer.innerHTML = `
+    <div class="results-summary">
+      <span class="results-summary-chip">${reviewedScenes.length} scenes ready</span>
+      <span class="results-summary-chip">Edit scene text and search queries here</span>
+    </div>
+    ${reviewedScenes.map(scene => `
+      <section class="scene-result" data-scene-result="${scene.id}">
+        ${renderSceneEditor(scene)}
+      </section>
+    `).join('')}
+  `;
+  resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderLoadingState(mediaType) {
@@ -414,16 +381,15 @@ function renderLoadingState(mediaType) {
 }
 
 function renderInitialResultsState() {
-  resultsContainer.innerHTML = `
-    <div class="results-state">
-      <p class="results-state-title">Ready to fetch results</p>
-      <p class="results-state-copy mb-0">Review scenes, then fetch matching previews from Pexels.</p>
-    </div>
-  `;
+  renderSceneEditorState();
 }
 
 function renderPersistedResults() {
   if (latestResults.length === 0) {
+    if (reviewedScenes.length > 0) {
+      renderInitialResultsState();
+    }
+
     return;
   }
 
@@ -463,9 +429,6 @@ function renderResults(payload) {
 function renderSceneResult(scene, mediaType) {
   // A scene result contains the original reviewed scene text, the normalized
   // search queries, candidate count, and the final selected ranked assets.
-  const queryMarkup = scene.searchQueries.map(query => (
-    `<span class="scene-query-chip">${escapeHtml(query)}</span>`
-  )).join('');
   const sceneAssets = Array.isArray(scene.assets) ? scene.assets : [];
   const assetMarkup = sceneAssets.length > 0
     ? sceneAssets.map((asset, index) => renderAssetCard(scene, asset, index, mediaType)).join('')
@@ -477,12 +440,7 @@ function renderSceneResult(scene, mediaType) {
 
   return `
     <section class="scene-result" data-scene-result="${scene.id}">
-      <div class="scene-result-header">
-        <div>
-          <h3 class="scene-title"><span>Scene ${scene.id}</span>${escapeHtml(scene.sceneText)}</h3>
-        </div>
-        <div class="scene-query-list">${queryMarkup}</div>
-      </div>
+      ${renderSceneEditor(scene)}
       <div class="scene-tools">
         <button class="btn btn-outline-light btn-sm" type="button" data-replace-scene="${scene.id}">Replace</button>
         <span class="footer-note">${scene.candidateCount || 0} candidates checked</span>
@@ -490,6 +448,40 @@ function renderSceneResult(scene, mediaType) {
       <div class="scene-inline-error" data-scene-error="${scene.id}" hidden></div>
       <div class="clip-row">${assetMarkup}</div>
     </section>
+  `;
+}
+
+function renderSceneEditor(scene) {
+  return `
+    <div class="scene-result-header">
+      <div class="scene-title-wrap">
+        <h3 class="scene-title">
+          <span>Scene ${scene.id}</span>
+          <span
+            class="editable-scene-text"
+            contenteditable="true"
+            role="textbox"
+            aria-label="Scene ${scene.id} text"
+            data-scene-field="sceneText"
+            data-scene-id="${scene.id}"
+          >${escapeHtml(scene.sceneText)}</span>
+        </h3>
+        <button class="btn btn-outline-light btn-sm" type="button" data-remove-scene="${scene.id}">Remove</button>
+      </div>
+      <div class="scene-query-list">
+        ${[0, 1].map(index => `
+          <span
+            class="scene-query-chip"
+            contenteditable="true"
+            role="textbox"
+            aria-label="Scene ${scene.id} search query ${index + 1}"
+            data-scene-field="searchQuery"
+            data-scene-id="${scene.id}"
+            data-query-index="${index}"
+          >${escapeHtml(scene.searchQueries?.[index] || '')}</span>
+        `).join('')}
+      </div>
+    </div>
   `;
 }
 
@@ -632,18 +624,6 @@ async function downloadAllResults() {
   }
 }
 
-function openReviewModal() {
-  reviewModal.classList.add('is-open');
-  reviewModal.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('modal-open');
-}
-
-function closeReviewModal() {
-  reviewModal.classList.remove('is-open');
-  reviewModal.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('modal-open');
-}
-
 function startDownloadFeedback() {
   // ZIP creation can take a while because the server must fetch remote media
   // files before the browser sees the final archive. These messages reassure the
@@ -718,8 +698,6 @@ function clearSavedSession() {
   sceneTextOption.checked = true;
   progressPanel.hidden = true;
   clearDownloadStatus();
-  closeReviewModal();
-  renderReviewState();
   renderInitialResultsState();
   setDownloadButtonsDisabled(true);
   syncMediaTypeUi();
@@ -761,6 +739,28 @@ function syncJsonFromReviewedScenes() {
   reviewedScenesJsonSnapshot = scenesJson.value;
 }
 
+function syncLatestResultsFromReviewedScenes() {
+  if (latestResults.length === 0) {
+    return;
+  }
+
+  const scenesById = new Map(reviewedScenes.map(scene => [scene.id, scene]));
+
+  latestResults = latestResults.map(result => {
+    const reviewedScene = scenesById.get(result.id);
+
+    if (!reviewedScene) {
+      return result;
+    }
+
+    return {
+      ...result,
+      sceneText: reviewedScene.sceneText,
+      searchQueries: [...reviewedScene.searchQueries]
+    };
+  });
+}
+
 // If the user pastes or types a new JSON payload after reviewing scenes, the
 // old reviewedScenes array is no longer trustworthy. This guard makes the
 // textarea the source of truth again and prevents "Get Videos" from silently
@@ -777,8 +777,6 @@ function invalidateReviewedScenesIfJsonChanged() {
   reviewedScenes = [];
   latestResults = [];
   reviewedScenesJsonSnapshot = '';
-  closeReviewModal();
-  renderReviewState();
   renderInitialResultsState();
   setDownloadButtonsDisabled(true);
   setStatus('JSON changed. Review or fetch again to use the new scenes.');

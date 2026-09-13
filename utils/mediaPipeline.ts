@@ -1,20 +1,16 @@
 import { rankMediaCandidates, summarizeRankingStatus } from './clipRanker';
-import { dedupeCandidatesById, selectImageResults } from './mediaSelection';
 import { MEDIA_TYPES } from './mediaTypes';
 import { searchPhotos, searchVideos } from './pexelsApi';
-import type { MediaCandidate, MediaType, RankedMediaCandidate, Scene, SceneProcessingResult } from './types';
+import type { MediaCandidate, MediaType, RankedMediaCandidate, RankingStatus, Scene, SceneProcessingResult } from './types';
 
 const PEXELS_CANDIDATES_PER_QUERY = Number(process.env.PEXELS_CANDIDATES_PER_QUERY || 10);
 const MAX_CANDIDATES_FOR_RANKING = Number(process.env.MAX_CANDIDATES_FOR_RANKING || 10);
 const SCENE_PROCESSING_CONCURRENCY = Number(process.env.SCENE_PROCESSING_CONCURRENCY || 3);
 
-// Each media type has the same high-level pipeline but a different fetcher and
-// final selection rule. Videos keep the top two ranked clips. Images keep more
-// items and try to preserve a practical landscape/portrait mix for editing.
+// Each media type has the same high-level pipeline but a different Pexels
+// fetcher. Final selection is query-balanced: one chosen asset per search query.
 interface MediaPipeline {
   fetchCandidates: (query: string, perPage: number) => Promise<MediaCandidate[]>;
-  getRankingSelectionLimit: (candidates: MediaCandidate[]) => number;
-  finalizeSelections: (candidates: RankedMediaCandidate[]) => RankedMediaCandidate[];
 }
 
 interface SearchCache extends Map<string, Promise<MediaCandidate[]>> {}
@@ -34,18 +30,10 @@ interface ProcessSingleSceneInput {
 
 const MEDIA_PIPELINES: Record<MediaType, MediaPipeline> = {
   [MEDIA_TYPES.VIDEO]: {
-    fetchCandidates: searchVideos,
-    getRankingSelectionLimit: () => 2,
-    finalizeSelections: candidates => candidates.slice(0, 2)
+    fetchCandidates: searchVideos
   },
   [MEDIA_TYPES.IMAGE]: {
-    fetchCandidates: searchPhotos,
-    getRankingSelectionLimit: candidates => candidates.length,
-    finalizeSelections: candidates => selectImageResults(candidates, {
-      landscapeTarget: 2,
-      portraitTarget: 2,
-      totalTarget: 4
-    }) as RankedMediaCandidate[]
+    fetchCandidates: searchPhotos
   }
 };
 
@@ -112,32 +100,96 @@ export async function processSingleScene({
     }))
   );
 
-  // Pexels can return the same asset for multiple related queries. Deduping
-  // preserves a sourceQueries list so the ranker still knows every query that
-  // matched that asset.
-  const candidates = dedupeCandidatesById(queryResults)
-    .filter(candidate => !excludedIds.has(String(candidate.id)))
-    .slice(0, MAX_CANDIDATES_FOR_RANKING);
+  const selectedIds = new Set(excludedIds);
+  const rankingStatuses: RankingStatus[] = [];
+  let candidateCount = 0;
 
-  // The ranker may use OpenAI or fall back to heuristics. The returned ranking
-  // object records which mode actually ran, which lets the UI explain it.
-  const rankingResult = await rankMediaCandidates({
-    mediaType,
-    sceneText: scene.sceneText,
-    searchQueries,
-    candidates,
-    maxSelections: pipeline.getRankingSelectionLimit(candidates)
-  });
-  const selectedAssets = pipeline.finalizeSelections(rankingResult.assets);
+  // Each query gets its own candidate pool and ranking pass. This guarantees
+  // one returned asset per query whenever Pexels returns at least one usable
+  // candidate for that specific query, instead of letting one query dominate
+  // the final scene results.
+  const selectedAssets: RankedMediaCandidate[] = [];
+
+  for (const { query, candidates } of queryResults) {
+    const queryCandidates = dedupeCandidatesForQuery(query, candidates)
+      .filter(candidate => !selectedIds.has(String(candidate.id)))
+      .slice(0, MAX_CANDIDATES_FOR_RANKING);
+
+    candidateCount += queryCandidates.length;
+
+    const rankingResult = await rankMediaCandidates({
+      mediaType,
+      sceneText: scene.sceneText,
+      searchQueries: [query],
+      candidates: queryCandidates,
+      maxSelections: 1
+    });
+
+    rankingStatuses.push(rankingResult.ranking);
+
+    const selectedAsset = rankingResult.assets[0] || buildBestAvailableAsset({
+      query,
+      candidates: queryCandidates,
+      ranking: rankingResult.ranking
+    });
+
+    if (!selectedAsset) {
+      continue;
+    }
+
+    selectedIds.add(String(selectedAsset.id));
+    selectedAssets.push(selectedAsset);
+  }
 
   return {
     id: scene.id,
     mediaType,
     sceneText: scene.sceneText,
     searchQueries,
-    candidateCount: candidates.length,
-    ranking: rankingResult.ranking,
+    candidateCount,
+    ranking: summarizeRankingStatus(rankingStatuses),
     assets: selectedAssets
+  };
+}
+
+function dedupeCandidatesForQuery(query: string, candidates: MediaCandidate[] = []): MediaCandidate[] {
+  const dedupedCandidates = new Map<MediaCandidate['id'], MediaCandidate & { sourceQueries: string[] }>();
+
+  candidates.forEach(candidate => {
+    if (dedupedCandidates.has(candidate.id)) {
+      return;
+    }
+
+    dedupedCandidates.set(candidate.id, {
+      ...candidate,
+      sourceQueries: [query]
+    });
+  });
+
+  return [...dedupedCandidates.values()];
+}
+
+function buildBestAvailableAsset({
+  query,
+  candidates,
+  ranking
+}: {
+  query: string;
+  candidates: MediaCandidate[];
+  ranking: RankingStatus;
+}): RankedMediaCandidate | null {
+  const candidate = candidates[0];
+
+  if (!candidate) {
+    return null;
+  }
+
+  return {
+    ...candidate,
+    sourceQueries: [query],
+    rankScore: 0,
+    rankReason: `Pexels returned this as the best available result for "${query}", but it did not meet the ranking threshold.`,
+    rankingMode: ranking.appliedMode === 'openai' ? 'openai' : 'heuristic'
   };
 }
 

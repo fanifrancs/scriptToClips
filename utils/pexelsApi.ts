@@ -2,7 +2,6 @@ import axios from 'axios';
 import { MEDIA_TYPES } from './mediaTypes';
 import type { MediaCandidate, Orientation } from './types';
 
-const API_KEY = process.env.PEXELS_API_KEY;
 const VIDEO_SEARCH_URL = 'https://api.pexels.com/videos/search';
 const PHOTO_SEARCH_URL = 'https://api.pexels.com/v1/search';
 
@@ -109,7 +108,9 @@ export async function searchPhotos(query: string, perPage = 5): Promise<MediaCan
 }
 
 async function searchPexels<T>(url: string, query: string, perPage: number) {
-  if (!API_KEY) {
+  const apiKey = getPexelsApiKey();
+
+  if (!apiKey) {
     throw new Error('Missing PEXELS_API_KEY in environment.');
   }
 
@@ -117,13 +118,17 @@ async function searchPexels<T>(url: string, query: string, perPage: number) {
     // axios builds the query string from params and sends the Pexels API key in
     // the Authorization header required by Pexels.
     return await axios.get<T>(url, {
-      headers: { Authorization: API_KEY },
+      headers: { Authorization: apiKey },
       params: { query, per_page: perPage }
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown Pexels API failure';
     throw new Error('Pexels API error: ' + message);
   }
+}
+
+function getPexelsApiKey() {
+  return String(process.env.PEXELS_API_KEY || '').trim();
 }
 
 function pickVideoFile(videoFiles: PexelsVideoFile[] = []) {

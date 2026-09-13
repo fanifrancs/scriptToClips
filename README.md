@@ -23,9 +23,9 @@ ScriptToClips currently uses ChatGPT as the script parsing step.
 3. Paste your script into ChatGPT.
 4. ChatGPT returns a JSON array of scene objects.
 5. Paste that JSON into ScriptToClips.
-6. Review and edit scene text or search queries.
-7. Choose video or picture results.
-8. Fetch ranked Pexels matches for each scene.
+6. Choose video or picture results.
+7. Fetch ranked Pexels matches for each scene.
+8. Edit scene text or search queries directly in the results section.
 9. Replace any weak scene result.
 10. Select which assets should be included.
 11. Download a ZIP containing the selected media plus optional metadata.
@@ -34,7 +34,7 @@ ScriptToClips currently uses ChatGPT as the script parsing step.
 
 - Built-in ChatGPT prompt for scene JSON generation
 - Scene JSON validation before remote media fetching
-- Review modal for editing scene text and search queries
+- Inline results-section editing for scene text and search queries
 - Pexels video and photo search
 - Highest-quality available MP4 selection for videos
 - High-quality photo source selection for pictures
@@ -163,12 +163,7 @@ Recoverable fallback reasons include quota, rate-limit, billing, API key, empty 
 
 For videos, the app picks the highest-quality available MP4 variant from each returned Pexels video.
 
-For pictures, the app keeps a high-quality source URL and returns up to four selected images per scene:
-
-- 2 landscape images
-- 2 portrait images
-
-If there are not enough landscape or portrait images, square and remaining candidates are used as fallbacks.
+For pictures, the app keeps a high-quality source URL and returns one selected image per search query.
 
 ## ZIP Downloads
 

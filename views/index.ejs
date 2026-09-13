@@ -87,7 +87,7 @@
               Paste the JSON response from ChatGPT into the workspace below, choose whether you want videos or pictures, and click <strong>Get Results</strong>. The app validates the structure, pulls a larger candidate set from Pexels for each scene, and then uses AI ranking to keep the closest matches.
             </p>
             <p class="footer-note mb-0">
-              Video results keep the top clips per scene. Picture results keep two landscape and two portrait matches per scene.
+              Each search query is ranked separately so every query can contribute one strong match.
             </p>
           </article>
         </div>
@@ -142,7 +142,7 @@
                     <input type="radio" name="mediaType" value="image">
                     <span class="media-type-option-copy">
                       <strong>Pictures</strong>
-                      <span>Fetch and rank stock photos, then keep 2 landscape and 2 portrait matches per scene.</span>
+                      <span>Fetch and rank stock photos, then keep one strong match per search query.</span>
                     </span>
                   </label>
                 </div>
@@ -161,7 +161,6 @@
                 required
               ></textarea>
               <div class="d-flex flex-wrap gap-2 align-items-center">
-                <button class="btn btn-outline-light px-3 py-2" type="button" id="reviewButton">Review Scenes</button>
                 <button class="btn btn-accent px-3 py-2" type="submit" id="submitButton">Get Videos</button>
                 <span id="formStatus" class="status-chip">Waiting for JSON input</span>
               </div>
@@ -223,30 +222,6 @@
       </div>
     </div>
   </main>
-  <!-- Review modal: dynamically filled from reviewedScenes. The same fields
-       write back into the textarea so the submitted JSON stays inspectable. -->
-  <div class="review-modal" id="reviewModal" aria-hidden="true">
-    <div class="review-modal-backdrop" data-close-review-modal></div>
-    <section class="review-modal-panel" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
-      <header class="review-modal-header">
-        <div>
-          <p class="section-label mb-1">Scene Review</p>
-          <h2 class="h4 mb-0" id="reviewModalTitle">Edit scenes before fetching media</h2>
-        </div>
-        <button class="btn btn-outline-light btn-sm" type="button" data-close-review-modal>Close</button>
-      </header>
-      <div id="reviewContainer" class="review-shell">
-        <div class="results-state">
-          <p class="results-state-title">No scenes reviewed yet</p>
-          <p class="results-state-copy mb-0">Click Review Scenes after pasting JSON to edit scene text and search queries.</p>
-        </div>
-      </div>
-      <footer class="review-modal-footer">
-        <span class="footer-note">Changes here update the JSON that gets submitted.</span>
-        <button class="btn btn-accent btn-sm" type="button" data-close-review-modal>Done</button>
-      </footer>
-    </section>
-  </div>
   <!-- Back-to-top is controlled by scroll state in index.js. -->
   <button class="back-to-top-btn" id="backToTopButton" type="button" aria-label="Back to top">
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
